@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>Still — surface lab</title>
+    <link rel="icon" href="data:," />
+  </head>
+  <body class="lab">
+    <!--
+      A development tool. It ships, because dragging the pressure slider is the
+      fastest possible explanation of what this project is, but the app never
+      links to it.
+    -->
+    <canvas id="surface" class="surface" aria-hidden="true"></canvas>
+    <div id="fallback" class="still-fallback" aria-hidden="true" hidden></div>
+
+    <form id="panel" class="panel">
+      <header class="panel__head">
+        <h1>Surface lab</h1>
+        <p id="status" class="panel__status" role="status">starting…</p>
+      </header>
+
+      <fieldset class="group">
+        <legend>Inputs</legend>
+
+        <label class="row" for="pressure">
+          <span>Pressure</span>
+          <input id="pressure" type="range" min="0" max="1" step="0.01" value="0.35" />
+          <output id="pressure-out" for="pressure">0.35</output>
+        </label>
+
+        <label class="row" for="heat">
+          <span>Heat</span>
+          <input id="heat" type="range" min="0" max="1" step="0.01" value="0" />
+          <output id="heat-out" for="heat">0.00</output>
+        </label>
+
+        <label class="row" for="still">
+          <span>Still</span>
+          <input id="still" type="range" min="0" max="1" step="0.01" value="0" />
+          <output id="still-out" for="still">0.00</output>
+        </label>
+
+        <label class="row" for="timescale">
+          <span>Time scale</span>
+          <input id="timescale" type="range" min="0" max="3" step="0.05" value="1" />
+          <output id="timescale-out" for="timescale">1.00</output>
+        </label>
+      </fieldset>
+
+      <fieldset class="group">
+        <legend>Palette</legend>
+        <div class="swatches">
+          <span class="swatches__label">Cool</span>
+          <label class="swatch"
+            ><input id="cool-deep" type="color" /><span>deep</span></label
+          >
+          <label class="swatch"><input id="cool-mid" type="color" /><span>mid</span></label>
+          <label class="swatch"
+            ><input id="cool-light" type="color" /><span>light</span></label
+          >
+          <label class="swatch"><input id="cool-foam" type="color" /><span>foam</span></label>
+        </div>
+        <div class="swatches">
+          <span class="swatches__label">Dusk</span>
+          <label class="swatch"
+            ><input id="dusk-deep" type="color" /><span>deep</span></label
+          >
+          <label class="swatch"><input id="dusk-mid" type="color" /><span>mid</span></label>
+          <label class="swatch"
+            ><input id="dusk-light" type="color" /><span>light</span></label
+          >
+          <label class="swatch"><input id="dusk-foam" type="color" /><span>foam</span></label>
+        </div>
+        <div class="swatches">
+          <span class="swatches__label">Warm</span>
+          <label class="swatch"
+            ><input id="warm-deep" type="color" /><span>deep</span></label
+          >
+          <label class="swatch"><input id="warm-mid" type="color" /><span>mid</span></label>
+          <label class="swatch"
+            ><input id="warm-light" type="color" /><span>light</span></label
+          >
+          <label class="swatch"><input id="warm-foam" type="color" /><span>foam</span></label>
+        </div>
+        <button id="reset-palette" type="button" class="button">Reset palette</button>
+      </fieldset>
+
+      <fieldset class="group">
+        <legend>Ripples</legend>
+        <p class="hint">Click anywhere on the surface, or use the button.</p>
+        <label class="row" for="ripple-strength">
+          <span>Strength</span>
+          <input id="ripple-strength" type="range" min="0" max="1.5" step="0.05" value="1" />
+          <output id="ripple-strength-out" for="ripple-strength">1.00</output>
+        </label>
+        <div class="buttons">
+          <button id="ripple" type="button" class="button">Ripple at cursor</button>
+          <button id="burst" type="button" class="button">Fire 10 (test the ring buffer)</button>
+        </div>
+      </fieldset>
+
+      <fieldset class="group">
+        <legend>Engine</legend>
+        <div class="buttons">
+          <button id="toggle-run" type="button" class="button">Pause</button>
+          <button id="toggle-fallback" type="button" class="button">Show CSS fallback</button>
+          <button id="lose-context" type="button" class="button">Lose context</button>
+        </div>
+        <dl id="stats" class="stats">
+          <div><dt>fps</dt><dd id="stat-fps">—</dd></div>
+          <div><dt>frame</dt><dd id="stat-frame">—</dd></div>
+          <div><dt>gpu</dt><dd id="stat-gpu">—</dd></div>
+          <div><dt>size</dt><dd id="stat-size">—</dd></div>
+        </dl>
+      </fieldset>
+    </form>
+
+    <script type="module" src="/src/shader-lab/main.ts"></script>
+  </body>
+</html>

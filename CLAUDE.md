@@ -28,5 +28,8 @@ The full spec is in docs/still-prompt.md. Read it before starting any phase.
 - Text NEVER sits directly on the shader. Every text-bearing surface has a
   scrim with a guaranteed minimum opacity beneath it.
 - The shader carries information, so it always has a text equivalent.
+- Reduced-effects mode removes motion, never information. uStill damps flow and
+  warp; frequency, relief and palette still follow pressure and heat, and the
+  CSS fallback encodes both too.
 - WebGL context loss must be handled: preventDefault on lost, rebuild on
   restored.

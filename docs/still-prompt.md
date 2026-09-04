@@ -314,6 +314,40 @@ ripple at the cursor. This page is a development tool; it ships to the site but
 is not linked from the app. Keep it — a reviewer clicking it and dragging the
 pressure slider is the fastest possible demonstration of what the project does.
 
+### Settled during Phase 2 — read before wiring the real signal in Phase 7
+
+Three things were decided at the shader by looking at the output, not by
+reasoning about it. They constrain what Phase 7 may assume.
+
+**There is a frequency floor, and calm depends on it.** Noise frequency ranges
+over `mix(1.30, 5.00, pressure)` rather than starting near zero. Below about one
+cycle per screen the entire viewport falls inside a single noise lobe, so the
+picture becomes whatever sign that lobe happens to have: an empty list rendered
+as an arbitrarily bright or dark wash that drifted as the field moved under it.
+The goal state of this app cannot be a coin toss. With the floor in place, an
+empty list holds a mean luminance of 51.1–52.3 over a 200-second sweep. Pressure
+also seats the surface on its ramp — `level = mix(0.18, 0.54, pressure)` — so a
+cleared list rests near the deep end. Without that, clearing your list made the
+screen *brighter*, which is backwards.
+
+**Heat travels through a third ramp, `DUSK`.** Teal and oxblood are near-opposite
+hues, so a componentwise mix between them desaturates to grey at the midpoint —
+and "half my load is overdue" is a common state that was rendering as dirty
+dishwater. Heat now walks cool → dusk (plum) → warm in two linear segments,
+mirrored exactly between `palette.ts` and the GLSL. A test asserts the mid stop
+never drops below 0.06 chroma anywhere along the path. Phase 8's contrast script
+must sample all three ramps, not two.
+
+**`uStill` is not a mute switch.** It damps flow and warp only. Frequency,
+relief, level and palette continue to follow pressure and heat, so a
+reduced-effects user still sees a surface that is denser when they are busy and
+warmer when they are late — it simply holds still. Ripples are damped to nothing.
+The CSS fallback makes the same bargain, encoding pressure through `--sf-spread`
+and heat through the ramp. Stillness removes motion; it never removes
+information. Phase 7 must not treat `uStill = 1` as "the shader is off", and
+Phase 8's effects preference inherits this: *reduced* is a still surface that
+still reports, *off* is the fallback, which also still reports.
+
 Show it running, then stop. I will want to tune the look before you wire it up.
 
 ---

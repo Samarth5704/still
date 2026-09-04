@@ -1,0 +1,43 @@
+/**
+ * The static fallback surface.
+ *
+ * Shown when WebGL2 is missing, when effects are off, and (from Phase 8) under
+ * prefers-reduced-motion. It is built from the same palette stops as the
+ * shader and reads the same pressure and heat, so it is the same product with
+ * the motion removed — not a grey box apologising for itself.
+ *
+ * Nothing here animates. That is the point.
+ */
+
+.still-fallback {
+  --sf-deep: rgb(6 16 30);
+  --sf-mid: rgb(12 56 76);
+  --sf-light: rgb(28 112 124);
+  --sf-foam: rgb(134 224 214);
+
+  /* 0..1, set from pressure: how far the crests spread across the field. */
+  --sf-spread: 0;
+
+  position: absolute;
+  inset: 0;
+  background-color: var(--sf-deep);
+  background-image:
+    radial-gradient(
+      ellipse calc(38% + 30% * var(--sf-spread)) calc(30% + 26% * var(--sf-spread))
+        at 22% 18%,
+      color-mix(in oklab, var(--sf-foam) calc(6% + 10% * var(--sf-spread)), transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      ellipse calc(60% + 24% * var(--sf-spread)) calc(48% + 20% * var(--sf-spread))
+        at 78% 30%,
+      color-mix(in oklab, var(--sf-light) calc(46% + 30% * var(--sf-spread)), transparent),
+      transparent 72%
+    ),
+    radial-gradient(
+      ellipse 90% 70% at 35% 88%,
+      color-mix(in oklab, var(--sf-mid) 82%, transparent),
+      transparent 76%
+    ),
+    linear-gradient(168deg, var(--sf-mid) 0%, var(--sf-deep) 68%);
+}
