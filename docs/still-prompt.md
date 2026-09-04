@@ -114,6 +114,9 @@ type Recurrence = {
   byNthWeekday?: { nth: number; weekday: number }  // nth may be -1 = last
   byMonth?: number                     // 1–12, for yearly
   starts: string                       // 'YYYY-MM-DD'
+  weekStart: 0 | 1                     // WKST: parity basis, seeded from
+                                       // settings.weekStartsOn at creation,
+                                       // never re-read from settings after
   ends: { type: 'never' } | { type: 'after'; count: number }
        | { type: 'until'; date: string }
   exceptions: RecurrenceException[]
@@ -156,7 +159,15 @@ type Settings = {
 
 ### `lib/recurrence.ts` — the hard part
 
-`occurrencesBetween(rule, windowStart, windowEnd, cap)` returns date strings.
+`occurrencesBetween(rule, windowStart, windowEnd, cap, { weekStart })` returns
+`Occurrence` records:
+`{ date, seq, status, movedFrom?, movedTo?, completedAt? }`, where `seq` is the
+0-based index of the occurrence within the series counted from `starts`, and
+`status` is `'pending' | 'completed' | 'skipped' | 'moved'`.
+
+`occurrenceDatesBetween(...)` is a thin `.map(o => o.date)` over the same call —
+never a second traversal, so the calendar and the list can never disagree about
+what exists.
 
 Must handle correctly:
 
@@ -167,10 +178,20 @@ Must handle correctly:
   month" is a common real rule.
 - **Leap years.** A yearly rule on 29 February.
 - **Weekly with an interval > 1** and a weekday set. "Every other week on Tue and
-  Thu" must anchor its week-parity to `starts`, not to the window, or scrolling
-  the calendar backwards will shift every occurrence.
+  Thu" must anchor its week-parity to the week containing `starts`, not to the
+  window, or scrolling the calendar backwards will shift every occurrence. That
+  week is computed under the rule's own `weekStart` (RFC 5545 WKST). Reading the
+  parity basis from settings at generation time is wrong: changing the app's
+  week-start preference would silently move every existing biweekly rule.
+  `weekStart` only affects rules with `interval >= 2`.
 - **`ends.after`** counts occurrences from `starts`, not from the window. A
-  window starting mid-series must still know how many came before it.
+  window starting mid-series must still know how many came before it. The
+  generated series is a function of the rule alone: exceptions filter and
+  annotate it, but never change its length or its dates. A skipped occurrence
+  still consumes one of the `count`, and a moved occurrence keeps its `seq`.
+  Because a skip silently burns a count, the UI must show it — the editor's
+  summary reads "10 times" with the final date, and the task reads "3 of 10
+  scheduled", never a bare "3 left" (Phase 5).
 - **Exceptions** are applied after generation: skipped dates are removed, moved
   dates are relocated, completed ones are marked.
 
