@@ -996,7 +996,8 @@
    */
   .detail,
   .manage,
-  .ask {
+  .ask,
+  .repeat-editor {
     width: min(38rem, calc(100vw - 2rem));
     max-height: min(44rem, calc(100svh - 2rem));
     /*
@@ -1019,13 +1020,15 @@
 
   .detail:not([open]),
   .manage:not([open]),
-  .ask:not([open]) {
+  .ask:not([open]),
+  .repeat-editor:not([open]) {
     display: none;
   }
 
   .detail::backdrop,
   .manage::backdrop,
-  .ask::backdrop {
+  .ask::backdrop,
+  .repeat-editor::backdrop {
     background: rgb(6 16 30 / 0.5);
     backdrop-filter: blur(3px);
   }
@@ -1143,6 +1146,7 @@
     :root:not([data-theme='dark']) .detail-inline-input,
     :root:not([data-theme='dark']) .manage-name,
     :root:not([data-theme='dark']) .subtask-title,
+    :root:not([data-theme='dark']) .repeat-number,
     :root:not([data-theme='dark']) .colour-select {
       background: rgb(255 255 255 / 0.55);
     }
@@ -1236,19 +1240,255 @@
     color: var(--ink);
   }
 
-  /* ---- recurrence, read-only until the editor arrives ---- */
+  /* ---- recurrence, on the task ---- */
 
   .field-repeat {
+    gap: 0.5rem;
+    padding-top: 0.9rem;
+    border-top: 1px solid var(--glass-edge);
+  }
+
+  /*
+   * A grid rather than a wrapping flex row: the rule can run to two lines, and
+   * in a flex row that pushes the icon onto a line of its own above it.
+   */
+  .repeat-body {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: 0.2rem 0.5rem;
+    font-size: 0.92rem;
+    color: var(--ink);
+  }
+
+  .repeat-body > .icon {
+    margin-top: 0.15rem;
+  }
+
+  /*
+   * The position in the series, never a count of what is left. A skipped
+   * occurrence spends one of a counted rule's turns, so "3 of 10" stays true
+   * where "7 left" would quietly stop being.
+   */
+  .repeat-progress {
+    grid-column: 2;
+    font-size: 0.8rem;
+    color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .repeat-progress:empty {
+    display: none;
+  }
+
+  .repeat-buttons {
+    display: flex;
+    flex-wrap: wrap;
     gap: 0.4rem;
   }
 
-  .repeat-body {
+  .repeat-buttons .text-button[hidden] {
+    display: none;
+  }
+
+  /*
+   * Which occurrences the edits in this visit are landing on. It appears only
+   * after the question has been answered, and it carries the way to change the
+   * answer, so a scope chosen in passing is never invisible or final.
+   */
+  .scope-note {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.35rem;
+    padding: 0.5rem 0.7rem;
+    background: rgb(134 224 214 / 0.09);
+    border: 1px solid rgb(134 224 214 / 0.22);
+    border-radius: var(--radius-sm);
+    font-size: 0.84rem;
+    color: var(--ink-dim);
+  }
+
+  .scope-note[hidden] {
+    display: none;
+  }
+
+  .link-button {
+    color: var(--ink);
+    font-size: 0.84rem;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    /* An inline word inside a sentence cannot be 44px tall without breaking the
+       line box, so it gets its target from padding it can afford. */
+    padding: 0.25rem;
+    margin: -0.25rem;
+    border-radius: var(--radius-sm);
+  }
+
+  .link-button:hover {
+    background: rgb(134 224 214 / 0.12);
+  }
+
+  /* ---- the recurrence editor ---- */
+
+  /* Narrow enough that "3" and "weeks" stay on one line in the right-hand
+     column of the frequency row, wide enough for three digits. */
+  .repeat-number {
+    width: 4.5rem;
+    flex: none;
+  }
+
+  .repeat-unit {
+    font-size: 0.9rem;
+    color: var(--ink-dim);
+  }
+
+  .repeat-choice {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
     flex-wrap: wrap;
-    font-size: 0.92rem;
+    gap: 0.5rem;
+    /* A radio is a small hit area; the row it sits in carries the target. */
+    min-height: var(--tap);
+  }
+
+  /*
+   * Both sit inline beside their radio; full width would wrap them onto a line
+   * of their own and break the "On <date>" sentence the row reads as. The
+   * number fields are excluded by name — they carry their own narrow width, and
+   * this rule comes later in the file, so without the exclusion it wins.
+   */
+  .repeat-choice .detail-select,
+  .repeat-choice .detail-date:not(.repeat-number) {
+    width: auto;
+    min-width: 8.5rem;
+    flex: 0 1 auto;
+  }
+
+  .repeat-choice-label {
+    min-width: 4.5rem;
+    font-size: 0.9rem;
+    color: var(--ink-dim);
+    cursor: pointer;
+  }
+
+  .repeat-radio {
+    width: 1.1rem;
+    height: 1.1rem;
+    flex: none;
+    accent-color: var(--c-foam);
+  }
+
+  /* A disabled control still says what the choice beside it would do. */
+  .repeat-choice :disabled {
+    opacity: 0.45;
+  }
+
+  .weekday-set {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+  }
+
+  .weekday-label {
+    display: inline-grid;
+    place-items: center;
+    min-width: var(--tap);
+    min-height: var(--tap);
+    padding: 0.3rem 0.5rem;
+    border: 1px solid var(--glass-edge);
+    border-radius: 999px;
+    color: var(--ink-dim);
+    font-size: 0.84rem;
+    cursor: pointer;
+    transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+  }
+
+  .weekday-label:hover {
+    background: rgb(134 224 214 / 0.09);
     color: var(--ink);
+  }
+
+  .weekday-input:checked + .weekday-label {
+    background: rgb(134 224 214 / 0.18);
+    border-color: rgb(134 224 214 / 0.4);
+    color: var(--ink);
+  }
+
+  .weekday-input:focus-visible + .weekday-label {
+    outline: 2px solid var(--c-foam);
+    outline-offset: 2px;
+  }
+
+  /*
+   * The readback. Nobody can hold "every other week on Tuesday and Thursday"
+   * in their head and check the parity, so the rule says itself in words and
+   * then shows the next five dates it produces. Both come from the same
+   * functions the rest of the app reads the rule with, so neither can flatter
+   * the other.
+   */
+  .repeat-readback {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.8rem;
+    background: rgb(134 224 214 / 0.07);
+    border: 1px solid var(--glass-edge);
+    border-radius: var(--radius-sm);
+  }
+
+  .repeat-summary {
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    font-weight: 400;
+    line-height: 1.35;
+    color: var(--ink);
+    text-wrap: pretty;
+  }
+
+  .repeat-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .repeat-preview li {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.25rem 0;
+    font-size: 0.88rem;
+    border-bottom: 1px solid rgb(134 224 214 / 0.08);
+  }
+
+  .repeat-preview li:last-child {
+    border-bottom: none;
+  }
+
+  .repeat-preview-date {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .repeat-preview-day {
+    color: var(--ink-faint);
+  }
+
+  .repeat-foot {
+    flex-wrap: wrap;
+  }
+
+  .repeat-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .repeat-editor .text-button[hidden] {
+    display: none;
+  }
+
+  .repeat-editor .text-button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
   }
 
   /* ---- subtasks ---- */
@@ -1513,6 +1753,7 @@
     .field-row {
       grid-template-columns: minmax(0, 1fr);
     }
+
   }
 
   /*

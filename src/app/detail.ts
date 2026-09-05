@@ -30,11 +30,20 @@
 import { ask, plural } from './ask.ts'
 import { append, el, reconcile, restoreFocus, setAttr, setClass, setText } from './dom.ts'
 import { icon } from './icons.ts'
+import { RecurrenceEditor } from './recurrence.ts'
 import { Store } from './store.ts'
+import type { EditScope } from './store.ts'
 import { childrenOf, shouldPromptToCloseParent, subtaskProgress } from '../lib/tasks.ts'
-import { describeRecurrence } from '../lib/parse.ts'
+import { formatLongDate } from '../lib/dates.ts'
+import { describeRule, seriesProgress } from '../lib/series.ts'
 import { dueLabel } from '../lib/views.ts'
 import type { ISODate, Priority, State, Task } from '../lib/types.ts'
+
+const SCOPE_WORDS: Record<EditScope, string> = {
+  occurrence: 'this occurrence only',
+  future: 'this and all future',
+  series: 'the whole series',
+}
 
 const PRIORITIES: { value: Priority; label: string; mark: string }[] = [
   { value: 'none', label: 'None', mark: '—' },
@@ -69,6 +78,18 @@ export class TaskDetail {
   /** The close-the-parent prompt, waved away for this visit. */
   private promptDismissed = false
   /**
+   * How far edits made in this visit reach into a repeating series.
+   *
+   * Null until the first edit, which is when the question gets asked — asking
+   * on open would interrupt someone who only came to read, and asking per
+   * field would ask five times to change a title, a date and a priority. Once
+   * answered it holds for the rest of the visit and is shown in the repeat
+   * section with a way to change it, so the answer is never invisible.
+   */
+  private scope: EditScope | null = null
+  /** In flight while the scope question is up, so a burst of edits asks once. */
+  private scopeAsk: Promise<EditScope | null> | null = null
+  /**
    * The commit for a field that has been typed into but not yet left.
    *
    * Escape is a *dismiss*, not a cancel — this dialog saves as you go, so
@@ -92,6 +113,13 @@ export class TaskDetail {
   private readonly newTag: HTMLInputElement
   private readonly repeatRow: HTMLElement
   private readonly repeatText: HTMLElement
+  private readonly repeatProgress: HTMLElement
+  private readonly repeatEdit: HTMLButtonElement
+  private readonly repeatSkip: HTMLButtonElement
+  private readonly repeatStop: HTMLButtonElement
+  private readonly scopeNote: HTMLElement
+  private readonly scopeText: HTMLElement
+  private readonly editor: RecurrenceEditor
   private readonly body: HTMLElement
   private readonly scheduling: HTMLElement
   private readonly filing: HTMLElement
@@ -127,6 +155,9 @@ export class TaskDetail {
       placeholder: 'New tag',
     })
     this.repeatText = el('span', { class: 'repeat-text' })
+    this.repeatProgress = el('span', { class: 'repeat-progress' })
+    this.scopeText = el('span', {})
+    this.editor = new RecurrenceEditor()
     this.subtaskProgressText = el('span', { class: 'subtask-progress' })
     this.subtaskList = el('ul', { class: 'subtask-list' })
     this.newSubtask = el('input', {
@@ -203,16 +234,30 @@ export class TaskDetail {
     const doneButton = el('button', { class: 'text-button is-primary', type: 'button' }, ['Done'])
     doneButton.addEventListener('click', () => this.close())
 
-    const clearRepeat = el('button', { class: 'text-button', type: 'button' }, ['Stop repeating'])
-    clearRepeat.addEventListener('click', () => {
+    this.repeatStop = el('button', { class: 'text-button', type: 'button' }, ['Stop repeating'])
+    this.repeatStop.addEventListener('click', () => this.stopRepeating())
+
+    this.repeatEdit = el('button', { class: 'text-button', type: 'button' }, ['Edit repeat'])
+    this.repeatEdit.addEventListener('click', () => void this.editRepeat())
+
+    this.repeatSkip = el('button', { class: 'text-button', type: 'button' }, ['Skip this one'])
+    this.repeatSkip.addEventListener('click', () => this.skipOccurrence())
+
+    const changeScope = el('button', { class: 'link-button', type: 'button' }, ['Change'])
+    changeScope.addEventListener('click', () => {
+      this.scope = null
       const id = this.taskId
-      if (!id) return
-      this.store.clearRecurrence(id)
-      this.handlers.announce('This task no longer repeats')
+      if (id !== null) void this.resolveScope(id)
+      this.renderScopeNote()
     })
+    this.scopeNote = el('p', { class: 'scope-note', role: 'status' }, [this.scopeText, changeScope])
+    this.scopeNote.hidden = true
+
     this.repeatRow = el('div', { class: 'field field-repeat' }, [
       el('span', { class: 'field-label' }, ['Repeats']),
-      el('div', { class: 'repeat-body' }, [icon('repeat'), this.repeatText, clearRepeat]),
+      el('div', { class: 'repeat-body' }, [icon('repeat'), this.repeatText, this.repeatProgress]),
+      el('div', { class: 'repeat-buttons' }, [this.repeatEdit, this.repeatSkip, this.repeatStop]),
+      this.scopeNote,
     ])
 
     const addTag = el('button', { class: 'inline-add', type: 'button', 'aria-label': 'Add tag' }, [
@@ -304,6 +349,10 @@ export class TaskDetail {
         close,
       ]),
       this.body,
+      // The editor is a modal of its own. Living in this dialog's subtree keeps
+      // it out of the app's layout code; the top layer puts it above this one
+      // regardless of where in the document it sits.
+      this.editor.root,
       el('div', { class: 'detail-foot' }, [
         remove,
         // Escape dismisses without discarding, which is only obvious once you
@@ -374,6 +423,8 @@ export class TaskDetail {
   open(taskId: string): void {
     this.taskId = taskId
     this.promptDismissed = false
+    this.scope = null
+    this.scopeAsk = null
     this.returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
     this.sync(this.store.getState(), this.store.getToday())
     this.root.showModal()
@@ -394,9 +445,110 @@ export class TaskDetail {
     return this.store.getState().tasks.find((t) => t.id === this.taskId)
   }
 
+  /**
+   * Commit an edit.
+   *
+   * For an ordinary task this is `updateTask` and nothing more. For a repeating
+   * one it has to know how far the edit reaches, which is a question only the
+   * user can answer — so the first edit of the visit asks, and the answer
+   * governs the rest of it.
+   */
   private patch(fields: Partial<Task>, label: string): void {
-    if (this.taskId === null) return
-    this.store.updateTask(this.taskId, fields, label)
+    const id = this.taskId
+    if (id === null) return
+    const task = this.store.getState().tasks.find((t) => t.id === id)
+    if (!task || !this.store.ruleFor(task)) {
+      this.store.updateTask(id, fields, label)
+      return
+    }
+    void this.patchScoped(id, fields, label)
+  }
+
+  private async patchScoped(id: string, fields: Partial<Task>, label: string): Promise<void> {
+    const scope = await this.resolveScope(id)
+    if (scope === null) {
+      // Declining the question declines the edit. Re-reading from the store
+      // puts the field back to what it actually says.
+      this.sync(this.store.getState(), this.store.getToday())
+      return
+    }
+
+    const landed = this.store.applyScopedPatch(id, fields, scope, label)
+    if (landed === id) return
+
+    // The occurrence was lifted out of the series into a task of its own, and
+    // that new task is the one the edit is on — so the dialog follows it rather
+    // than leaving the user editing the row they thought they had just changed.
+    this.handlers.announce('Lifted this occurrence out of the repeat')
+    if (this.taskId !== id) return
+    this.taskId = landed
+    // It no longer repeats, so there is nothing left to scope.
+    this.scope = 'series'
+    this.renderScopeNote()
+    this.sync(this.store.getState(), this.store.getToday())
+  }
+
+  /**
+   * Ask how far an edit reaches, once per visit, and remember the answer.
+   *
+   * Concurrent edits — a title flushed on the way out while a date change is
+   * still waiting — share the one question rather than stacking dialogs.
+   */
+  private async resolveScope(id: string): Promise<EditScope | null> {
+    if (this.scope !== null) return this.scope
+    if (this.scopeAsk) return this.scopeAsk
+
+    const task = this.store.getState().tasks.find((t) => t.id === id)
+    const occurrence = task ? this.store.occurrenceFor(task) : null
+    const when = occurrence ? formatLongDate(occurrence.date, this.store.getToday()) : 'this date'
+
+    this.scopeAsk = ask<EditScope>({
+      title: 'This task repeats.',
+      message: 'How far should this change reach?',
+      choices: [
+        {
+          value: 'occurrence',
+          label: 'Just this occurrence',
+          detail: `${when} becomes a task of its own; the repeat carries on unchanged`,
+        },
+        {
+          value: 'future',
+          label: 'This and all future',
+          detail: `Splits the repeat in two at ${when}, leaving everything before it as it was`,
+        },
+        {
+          value: 'series',
+          label: 'The whole series',
+          detail: 'Changes the repeating task itself, every occurrence of it',
+          preferred: true,
+        },
+      ],
+      // The detail dialog is still modal underneath, so a fallback outside it
+      // would be inert; and it may itself have closed, which is why the view
+      // heading is behind it.
+      focusFallbacks: [
+        () => this.root.querySelector<HTMLElement>('.detail-title'),
+        () => document.querySelector<HTMLElement>('.view-title'),
+      ],
+    }).then((answer) => {
+      this.scopeAsk = null
+      if (answer !== null) {
+        this.scope = answer
+        this.renderScopeNote()
+      }
+      return answer
+    })
+
+    return this.scopeAsk
+  }
+
+  private renderScopeNote(): void {
+    const task = this.task()
+    const show = this.scope !== null && task !== undefined && this.store.ruleFor(task) !== undefined
+    this.scopeNote.hidden = !show
+    if (show && this.scope !== null) {
+      setText(this.scopeText, `Edits apply to ${SCOPE_WORDS[this.scope]}. `)
+    }
   }
 
   // ---- rendering ---------------------------------------------------------
@@ -498,15 +650,139 @@ export class TaskDetail {
     this.tagList.replaceChildren(...boxes)
   }
 
-  private renderRepeat(state: State, task: Task): void {
-    const rule = task.recurrenceId
-      ? state.recurrences.find((r) => r.id === task.recurrenceId)
-      : undefined
-    this.repeatRow.hidden = rule === undefined
-    if (!rule) return
-    // `describeRecurrence` takes a draft, whose weekStart is required; a stored
-    // rule written before that field existed defaults to Monday, as it did then.
-    setText(this.repeatText, describeRecurrence({ ...rule, weekStart: rule.weekStart ?? 1 }))
+  /**
+   * The repeat section: the rule in words, where you are in it, and the three
+   * things you can do to it.
+   *
+   * The position — "3 of 10 scheduled" — is not decoration. A skipped
+   * occurrence still burns one of a counted rule's occurrences, so a task that
+   * only ever said "repeats" would quietly lose one every time somebody skipped
+   * a week, with nothing on screen to notice it by.
+   */
+  private renderRepeat(_state: State, task: Task): void {
+    const rule = this.store.ruleFor(task)
+    const repeats = rule !== undefined
+
+    setText(this.repeatEdit, repeats ? 'Edit repeat' : 'Add a repeat')
+    this.repeatSkip.hidden = !repeats
+    this.repeatStop.hidden = !repeats
+    setAttr(this.repeatEdit, 'aria-label', `${repeats ? 'Edit' : 'Add'} repeat: ${task.title}`)
+
+    if (!rule) {
+      setText(this.repeatText, 'Does not repeat')
+      setText(this.repeatProgress, '')
+      this.renderScopeNote()
+      return
+    }
+
+    setText(this.repeatText, describeRule(rule))
+
+    const occurrence = this.store.occurrenceFor(task)
+    const progress = seriesProgress(rule, occurrence)
+    setText(this.repeatProgress, progress ? `${progress.index} of ${progress.total} scheduled` : '')
+    setAttr(
+      this.repeatSkip,
+      'aria-label',
+      occurrence
+        ? `Skip ${formatLongDate(occurrence.date, this.store.getToday())}: ${task.title}`
+        : `Skip this occurrence: ${task.title}`,
+    )
+    this.renderScopeNote()
+  }
+
+  // ---- repeat actions ----------------------------------------------------
+
+  /**
+   * Open the editor and do whatever it comes back with.
+   *
+   * Changing an existing rule asks for scope first — "this and all future"
+   * splits it, "the whole series" rewrites it — and there is no "just this
+   * occurrence" here, because a rule that applies to one occurrence is not a
+   * rule; that is what Skip and a moved date are for.
+   */
+  private async editRepeat(): Promise<void> {
+    const id = this.taskId
+    const task = this.task()
+    if (id === null || !task) return
+    const existing = this.store.ruleFor(task) ?? null
+
+    const result = await this.editor.open({
+      rule: existing,
+      today: this.store.getToday(),
+      due: task.due,
+      weekStart: this.store.getState().settings.weekStartsOn,
+      focusFallbacks: [() => this.root.querySelector<HTMLElement>('.field-repeat .text-button')],
+    })
+    if (result === null) return
+    if (result === 'remove') {
+      this.stopRepeating()
+      return
+    }
+
+    if (existing === null) {
+      this.store.setRecurrence(id, result)
+      this.handlers.announce(`Repeats ${describeRule({ ...result, id: 'x', exceptions: [] })}`)
+      return
+    }
+
+    const scope = await this.askRuleScope()
+    if (scope === null) return
+    this.store.setRecurrence(id, result, scope)
+    this.handlers.announce(
+      scope === 'future' ? 'Changed this and all future occurrences' : 'Changed the whole series',
+    )
+  }
+
+  /** The two-way version of the scope question: a rule change cannot be per-occurrence. */
+  private async askRuleScope(): Promise<EditScope | null> {
+    const task = this.task()
+    const occurrence = task ? this.store.occurrenceFor(task) : null
+    const when = occurrence ? formatLongDate(occurrence.date, this.store.getToday()) : 'here'
+
+    return ask<EditScope>({
+      title: 'This task already repeats.',
+      message: 'Which occurrences should the new rule cover?',
+      choices: [
+        {
+          value: 'future',
+          label: 'This and all future',
+          detail: `The old rule ends the day before ${when} and keeps what was already done`,
+        },
+        {
+          value: 'series',
+          label: 'The whole series',
+          detail: 'Replaces the rule outright, from the day it started',
+          preferred: true,
+        },
+      ],
+      focusFallbacks: [() => this.root.querySelector<HTMLElement>('.detail-title')],
+    })
+  }
+
+  /** Wave one occurrence away without doing it. The rule is untouched. */
+  private skipOccurrence(): void {
+    const id = this.taskId
+    const task = this.task()
+    if (id === null || !task) return
+    const occurrence = this.store.occurrenceFor(task)
+    if (!occurrence) return
+
+    const result = this.store.skipOccurrence(id)
+    const when = formatLongDate(occurrence.date, this.store.getToday())
+    this.handlers.announce(
+      result?.advancedTo
+        ? `Skipped ${when}. Next on ${formatLongDate(result.advancedTo, this.store.getToday())}.`
+        : `Skipped ${when}. That was the last one.`,
+    )
+  }
+
+  private stopRepeating(): void {
+    const id = this.taskId
+    if (id === null) return
+    this.store.clearRecurrence(id)
+    this.scope = null
+    this.renderScopeNote()
+    this.handlers.announce('This task no longer repeats')
   }
 
   private renderSubtasks(state: State, task: Task): void {

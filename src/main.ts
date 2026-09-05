@@ -21,9 +21,10 @@ import { TaskList } from './app/tasklist.ts'
 import { UndoBar } from './app/undo.ts'
 import { emptyKindFor, renderEmpty } from './app/empty.ts'
 import { el, query, setText } from './app/dom.ts'
+import { formatLongDate } from './lib/dates.ts'
 import { groupsForView, parseHash, viewCounts, viewTitle } from './lib/views.ts'
 import type { View } from './lib/views.ts'
-import type { Task } from './lib/types.ts'
+import type { ISODate, Task } from './lib/types.ts'
 
 const store = new Store()
 let view: View = parseHash(location.hash)
@@ -80,6 +81,11 @@ const taskList = new TaskList({
  * Complete a task: commit immediately so the surface and every count react at
  * once, hold the row on screen for a beat, and offer the change back for eight
  * seconds.
+ *
+ * A repeating task is the one case where the row does *not* leave. Ticking it
+ * finishes one occurrence and the same task reappears on its next date, so
+ * animating it out and then putting it back would be a lie about what just
+ * happened. The undo message says where it went instead.
  */
 function complete(task: Task, origin: { x: number; y: number }): void {
   if (task.done) return
@@ -88,24 +94,44 @@ function complete(task: Task, origin: { x: number; y: number }): void {
   // the shader out of the list's business entirely.
   ripple(origin)
 
-  store.setDone(task.id, true)
+  let advancedTo: ISODate | null = null
+  if (store.ruleFor(task)) {
+    advancedTo = store.completeOccurrence(task.id)?.advancedTo ?? null
+  } else {
+    store.setDone(task.id, true)
+  }
   const snapshot = store.peekUndo()
+
+  const undoAction = (): void => {
+    // Only a task that actually left has an exit to cancel.
+    if (advancedTo === null) taskList.cancelExit(task.id)
+    store.undo()
+    announcer.say(`Restored ${task.title}`)
+  }
+  const onExpire = (): void => {
+    if (snapshot) store.expireUndo(snapshot)
+  }
+
+  if (advancedTo !== null) {
+    // The row has not been removed, but the new date can carry it out of this
+    // view — ticking today's occurrence of a weekly task moves it to Upcoming.
+    // When that happens the focused checkbox goes with it and focus lands on
+    // <body>, which is the end of keyboard navigation until the user tabs in
+    // from the top of the page.
+    if (document.activeElement === null || document.activeElement === document.body) {
+      taskList.focusNear(task.id)
+    }
+    const next = formatLongDate(advancedTo, store.getToday())
+    announcer.say(`Completed ${task.title}. Next on ${next}.`)
+    undoBar.show(`Completed "${task.title}" — next on ${next}`, undoAction, onExpire)
+    return
+  }
 
   taskList.focusNear(task.id)
   taskList.animateOut(task.id, () => render())
 
   announcer.say(`Completed ${task.title}`)
-  undoBar.show(
-    `Completed "${task.title}"`,
-    () => {
-      taskList.cancelExit(task.id)
-      store.undo()
-      announcer.say(`Restored ${task.title}`)
-    },
-    () => {
-      if (snapshot) store.expireUndo(snapshot)
-    },
-  )
+  undoBar.show(`Completed "${task.title}"`, undoAction, onExpire)
 }
 
 function render(): void {

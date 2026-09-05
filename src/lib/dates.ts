@@ -159,3 +159,24 @@ export function formatTimeOfDay(hhmm: string | null): string | null {
   const hour = h % 12 === 0 ? 12 : h % 12
   return m === 0 ? `${hour} ${suffix}` : `${hour}:${String(m).padStart(2, '0')} ${suffix}`
 }
+
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]
+
+/**
+ * '2026-12-15' -> '15 December 2026', or '15 December' when it falls in
+ * `relativeTo`'s year.
+ *
+ * Lives beside `formatTimeOfDay` and for the same reason: the recurrence
+ * editor's summary, its occurrence preview and the task row all name a date in
+ * prose, and a summary reading "until 2026-12-15" beside a preview reading
+ * "15 December" is the kind of small inconsistency that makes an interface
+ * feel unfinished.
+ */
+export function formatLongDate(iso: ISODate, relativeTo?: ISODate): string {
+  const { y, m, d } = parseISODate(iso)
+  const sameYear = relativeTo !== undefined && parseISODate(relativeTo).y === y
+  return sameYear ? `${d} ${MONTH_NAMES[m - 1]}` : `${d} ${MONTH_NAMES[m - 1]} ${y}`
+}

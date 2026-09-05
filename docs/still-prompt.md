@@ -464,6 +464,68 @@ Budget more time for this than for the shader.
 - Skipping an occurrence without completing it.
 - Show, on the task, how many occurrences remain when the rule has an end.
 
+### Settled during Phase 5 — read before Phase 6
+
+**The task *is* the series.** There is one `Task` per recurring rule, never one
+per occurrence, and its `due` is the occurrence it is currently sitting on.
+Everything else follows: ticking it records a `'completed'` exception and walks
+`due` forward, skipping records a `'skipped'` one and does the same, and
+exhausting the rule is the only thing that sets `done`. `lib/series.ts` holds
+those operations and `recurrence.ts` still holds the generator, so the "what
+dates does this rule produce" question and the "what happens when you tick it"
+question never answer each other.
+
+Phase 6 therefore cannot find an occurrence's task by looking for one: to put
+occurrences on a month grid it must pull them from `state.recurrences` for the
+visible window and attribute each to the task carrying that rule. The task's
+`due` names only the current occurrence, not the ones either side of it.
+
+**No new field on `Task`.** The Phase 1 type block stands unchanged, which is
+why the `SUBTASK_STRIPPED` classification needed no new entry. The scope of an
+edit is not data — it is state for the length of one visit to the detail
+dialog.
+
+**`setDone` routes repeating tasks away from itself.** There is one way to tick
+a task and it always does the right thing, rather than every caller — the list
+checkbox, the close-the-parent prompt, a keyboard shortcut — having to remember
+which kind of task it holds. Completing an occurrence also unticks the
+subtasks: a repeating task's checklist belongs to the occurrence, so next
+week's review starts empty.
+
+**Position, never remainder.** A skipped occurrence still consumes one of an
+`ends.after` count, so "7 left" would quietly stop being true the first time
+anybody skipped one. The task and the editor both read `3 of 10 scheduled`, and
+the editor's summary states the count with the date it lands on — "10 times
+(ending 14 January 2026)". Counting an `until` rule means generating it, so
+`totalOccurrences` refuses past a thousand and the UI drops the position rather
+than showing a number it had to strain for.
+
+**"This and all future" really does leave two rules.** The original is ended
+the day before the split and the new one starts on it, with an untouched
+`ends.after` carried across as *remaining* rather than restated — ten times
+that has already run three becomes seven, not ten again. The truncated original
+is kept only when it carries exceptions: with no task pointing at it, a husk
+with no history in it is storage weight nothing can ever render, while one with
+completions in it is the record of what was actually done, which is Phase 6's
+to draw.
+
+**The recurrence editor is the one dialog with a genuine Cancel**, and Phase 4
+said it would have to declare itself if it did. A rule is built from parts that
+are only meaningful together — halfway between "every Monday" and "the last
+Friday of every month" the draft is a monthly rule with a weekday set and no
+month day — so it holds its own draft, commits nothing until Save, and says
+"Cancel discards this repeat" in its footer where the button is. It resolves a
+promise rather than writing to the store, because what a new rule *means* for
+an existing series is the store's decision, not the dialog's.
+
+**The scope question is asked once per visit, on the first edit.** Not on open,
+which would interrupt someone who came to read; not per field, which would ask
+five times to change a title, a date and a priority. The answer is then shown
+in the repeat section with a way to change it, so a scope chosen in passing is
+never invisible. Editing the rule itself asks a two-way version of the same
+question — a rule that applies to one occurrence is not a rule, which is what
+Skip and a moved date are for.
+
 ---
 
 ## Phase 6 — calendar and agenda

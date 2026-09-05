@@ -30,13 +30,37 @@ The full spec is in docs/still-prompt.md. Read it before starting any phase.
   nest one under it.
   ANY NEW FIELD ON Task MUST BE CLASSIFIED THERE — stripped or inherited — in
   the same commit that adds it. A field that is neither is silently inherited,
-  which is the wrong default and fails without an error. Phase 5's recurrence
-  work adds fields and scope-of-edit state to Task; recurrenceId is already
+  which is the wrong default and fails without an error. recurrenceId is
   stripped, and anything alongside it must be too, because an occurrence of a
-  checklist item is meaningless. lib/tasks.ts enforces this on creation;
-  app/detail.ts hides the matching regions for a subtask. Both sides read from
-  the one constant, so they cannot drift.
+  checklist item is meaningless. Phase 5 added no Task field: the scope of an
+  edit is per-visit state in app/detail.ts and never reaches the data.
+  lib/tasks.ts enforces this on creation; app/detail.ts hides the matching
+  regions for a subtask. Both sides read from the one constant, so they cannot
+  drift.
 - Pressure saturates (1 - exp(-load/k)), never scales linearly.
+
+### Recurrence in the app (lib/series.ts)
+- The TASK IS THE SERIES: one Task per rule, and its `due` is the occurrence it
+  currently sits on. Ticking records a 'completed' exception and walks `due`
+  forward; exhausting the rule is the only thing that sets `done`.
+- store.setDone routes a repeating task to completeOccurrence. There is one way
+  to tick a task and it always does the right thing — do not add a second.
+  Advancing also unticks the subtasks: the checklist belongs to the occurrence.
+- A skip consumes one of an ends.after count, so the UI shows a POSITION
+  ("3 of 10 scheduled") and never a remainder ("7 left"), which a skip would
+  silently falsify. totalOccurrences refuses to count past 1000 rather than
+  generate a series to answer a cosmetic question.
+- "This and all future" splits the rule: the original ends the day before, the
+  new one starts on the day. An ends.after the user did not touch carries
+  across as REMAINING, not restated. The truncated original is kept only when
+  it carries exceptions — a husk no task points at can never be rendered.
+- Every "what comes next" search is still a bounded window over the bounded
+  generator. lib/series.ts never calls occurrencesBetween without one.
+- app/recurrence.ts is the ONE dialog with a genuine Cancel, because a
+  half-built rule must never reach the store. It holds a draft, resolves a
+  promise, and says so in its footer. Everything else still saves as you go.
+- The scope question is asked once per visit to the detail dialog, on the first
+  edit, and the answer is then shown with a way to change it.
 
 ### Quick-add parsing (lib/parse.ts)
 - Token KINDS claim characters in a fixed order (KIND_ORDER): recurrence, then
