@@ -22,6 +22,20 @@ The full spec is in docs/still-prompt.md. Read it before starting any phase.
   record. It never mutates the rule.
 - Subtasks are one level deep, not a tree. A task with a parentId cannot have
   children. Enforced in the store.
+- SUBTASK_STRIPPED in lib/tasks.ts is the single definition of what a subtask
+  cannot carry. Subtasks are checklist items, not indented tasks: they have a
+  title and a tick and nothing else, and that is the whole reason this stays
+  one level deep rather than becoming a tree. The moment a subtask can hold its
+  own date, project or rule, it is a task, and users will reasonably expect to
+  nest one under it.
+  ANY NEW FIELD ON Task MUST BE CLASSIFIED THERE — stripped or inherited — in
+  the same commit that adds it. A field that is neither is silently inherited,
+  which is the wrong default and fails without an error. Phase 5's recurrence
+  work adds fields and scope-of-edit state to Task; recurrenceId is already
+  stripped, and anything alongside it must be too, because an occurrence of a
+  checklist item is meaningless. lib/tasks.ts enforces this on creation;
+  app/detail.ts hides the matching regions for a subtask. Both sides read from
+  the one constant, so they cannot drift.
 - Pressure saturates (1 - exp(-load/k)), never scales linearly.
 
 ### Quick-add parsing (lib/parse.ts)

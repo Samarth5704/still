@@ -103,7 +103,8 @@ type Task = {
 }
 
 type Project = { id, name, colorToken, icon, archived: boolean, order: number }
-type Tag     = { id, name, colorToken }
+type Tag     = { id, name, colorToken, archived: boolean }
+             // archived added in Phase 4: see "Settled during Phase 4" below
 
 type Recurrence = {
   id: string
@@ -399,6 +400,50 @@ Projects and tags: create, rename, recolour, archive. Archiving rather than
 deleting when items reference them, so a completed task from last month still
 resolves the name it was filed under. Deleting anyway requires an explicit
 reassign-or-delete choice with counts.
+
+### Settled during Phase 4 — read before Phase 5
+
+**`Tag` gained `archived: boolean`.** The Phase 1 type block above listed
+`Tag = { id, name, colorToken }`, but this phase requires archiving for *both*
+catalogues and a tag has exactly the same problem a project does: a completed
+task carries it, so deleting the name either rewrites history or leaves a
+dangling reference. The field is additive — `parseTag` defaults it to `false`,
+so data written before it existed loads as live, which is what it was — and it
+needed no schema bump. The type block has been corrected to match.
+
+Tag deletion offers *untag* where project deletion offers *delete the tasks*.
+Same shape of choice, different stakes: a tag is one chip among several, not
+the file the task lives in, so destroying a task over a retired label would be
+a disproportionate answer to the question being asked.
+
+**Every way out of a dialog is a dismiss, not a cancel.** Task detail saves as
+you go, so the close button, Done, Escape and a backdrop click all do exactly
+the same thing and none of them discards anything. That leaves one hole a
+save-as-you-go dialog can still fall into — `change` fires when a field is
+*left*, and Escape closes the dialog out from under the caret — so a field
+typed into but not yet left records its commit and is flushed explicitly on the
+way out, rather than trusting the browser to fire blur-then-change in that
+order on close. Because nothing can be lost there is no "discard changes?"
+prompt; the footer says "Changes save automatically", since a user expecting
+Escape to cancel would otherwise learn the rule by losing something. Phase 5's
+recurrence editor is a bigger, more modal thing to build inside this dialog —
+if any part of it needs a genuine cancel, it must say so and hold its own
+draft, because the surrounding contract is that closing keeps your work.
+
+**Focus restoration needs a named fallback, not a stored trigger.** A dialog
+restores focus to whatever opened it, but the edit made inside can destroy that
+control: completing a task removes its row, changing a due date moves the row
+out of Today, deleting a project takes its line out of the manage list.
+`focus()` on a detached node does nothing and focus lands on `<body>`, which
+ends keyboard navigation until the user tabs in from the top of the page.
+`restoreFocus` in `app/dom.ts` takes the preferred node plus ordered fallbacks
+and verifies each one actually took focus — connected is not the same as
+focusable, and an inert node accepts the call and changes nothing. The chains:
+task detail falls back to the view heading, then quick add; the manage dialog
+to the header button, then the heading; the question dialog to a control inside
+the dialog underneath, because a fallback outside a modal that is still open is
+inert and will silently refuse. The task list uses the same helper when the
+completed row was the last one.
 
 ---
 

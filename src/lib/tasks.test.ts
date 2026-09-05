@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { State, Task } from './types.ts'
-import { deleteTask, setParent, subtaskProgress } from './tasks.ts'
+import {
+  addSubtask,
+  deleteTask,
+  setParent,
+  shouldPromptToCloseParent,
+  subtaskProgress,
+} from './tasks.ts'
 import { defaultState } from './storage.ts'
 
 const task = (over: Partial<Task> & Pick<Task, 'id'>): Task => ({
@@ -110,5 +116,88 @@ describe('subtaskProgress', () => {
   it('counts done against total', () => {
     expect(subtaskProgress(family(), 'parent')).toEqual({ done: 1, total: 2 })
     expect(subtaskProgress(family(), 'other')).toEqual({ done: 0, total: 0 })
+  })
+})
+
+describe('addSubtask', () => {
+  const fresh = (over: Partial<Task> = {}) => task({ id: 'new', ...over })
+
+  it('strips the fields that would make it a task rather than a checklist item', () => {
+    const next = expectOk(
+      addSubtask(
+        family(),
+        'parent',
+        fresh({
+          due: '2026-03-01',
+          dueTime: '09:00',
+          projectId: 'uni',
+          tagIds: ['t1'],
+          recurrenceId: 'r1',
+        }),
+      ),
+    )
+    expect(next.tasks.find((t) => t.id === 'new')).toMatchObject({
+      parentId: 'parent',
+      due: null,
+      dueTime: null,
+      projectId: null,
+      tagIds: [],
+      recurrenceId: null,
+    })
+  })
+
+  it('appends after the existing subtasks', () => {
+    const next = expectOk(addSubtask(family(), 'parent', fresh()))
+    expect(next.tasks.find((t) => t.id === 'new')?.order).toBe(2)
+  })
+
+  it('refuses to hang a subtask off a subtask', () => {
+    expect(addSubtask(family(), 'a', fresh())).toMatchObject({
+      ok: false,
+      error: { code: 'parent-is-subtask' },
+    })
+  })
+
+  it('refuses an unknown parent and a duplicate id', () => {
+    expect(addSubtask(family(), 'nope', fresh())).toMatchObject({
+      ok: false,
+      error: { code: 'not-found' },
+    })
+    expect(addSubtask(family(), 'parent', fresh({ id: 'other' }))).toMatchObject({ ok: false })
+  })
+
+  it('does not mutate the input state', () => {
+    const before = family()
+    const snapshot = structuredClone(before)
+    addSubtask(before, 'parent', fresh())
+    expect(before).toEqual(snapshot)
+  })
+})
+
+describe('shouldPromptToCloseParent', () => {
+  it('is false while anything is outstanding', () => {
+    expect(shouldPromptToCloseParent(family(), 'parent')).toBe(false)
+  })
+
+  it('is true once every subtask is ticked and the parent is not', () => {
+    const all = stateWith([
+      task({ id: 'parent' }),
+      task({ id: 'a', parentId: 'parent', done: true }),
+      task({ id: 'b', parentId: 'parent', done: true }),
+    ])
+    expect(shouldPromptToCloseParent(all, 'parent')).toBe(true)
+  })
+
+  it('is false for a parent that is already done: there is nothing to offer', () => {
+    const closed = stateWith([
+      task({ id: 'parent', done: true }),
+      task({ id: 'a', parentId: 'parent', done: true }),
+    ])
+    expect(shouldPromptToCloseParent(closed, 'parent')).toBe(false)
+  })
+
+  it('is false for a task with no subtasks at all', () => {
+    expect(shouldPromptToCloseParent(family(), 'other')).toBe(false)
+    expect(shouldPromptToCloseParent(family(), 'nope')).toBe(false)
   })
 })

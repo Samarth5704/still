@@ -13,8 +13,10 @@ import './style.css'
 
 import { Announcer } from './app/announce.ts'
 import { Header, Nav } from './app/chrome.ts'
+import { Manage } from './app/manage.ts'
 import { QuickAdd } from './app/quickadd.ts'
 import { Store } from './app/store.ts'
+import { TaskDetail } from './app/detail.ts'
 import { TaskList } from './app/tasklist.ts'
 import { UndoBar } from './app/undo.ts'
 import { emptyKindFor, renderEmpty } from './app/empty.ts'
@@ -29,9 +31,22 @@ let view: View = parseHash(location.hash)
 const root = query<HTMLElement>(document, '#app')
 const announcer = new Announcer(document.body)
 
-const header = new Header()
+const manage = new Manage(store, { announce: (message) => announcer.say(message) })
+const header = new Header(() => manage.open())
 const nav = new Nav()
 const undoBar = new UndoBar()
+
+/** A completion anywhere reports where on screen it happened; Phase 7 rides on it. */
+function ripple(origin: { x: number; y: number }): void {
+  window.dispatchEvent(
+    new CustomEvent('still:ripple', { detail: { x: origin.x, y: origin.y, strength: 1 } }),
+  )
+}
+
+const detail = new TaskDetail(store, {
+  announce: (message) => announcer.say(message),
+  ripple,
+})
 
 const heading = el('h1', { class: 'view-title', tabindex: '-1' })
 const listHost = el('div', { class: 'list-host' })
@@ -54,11 +69,7 @@ const quickAdd = new QuickAdd(
 
 const taskList = new TaskList({
   onToggle: (task, origin) => complete(task, origin),
-  onOpen: (task) => {
-    // The detail dialog arrives in Phase 4. Until then, opening a task says so
-    // rather than doing nothing, which would read as a broken control.
-    announcer.say(`${task.title}. Task detail opens in the next phase.`)
-  },
+  onOpen: (task) => detail.open(task.id),
   onMove: (task, direction) => {
     store.move(task.id, direction)
     announcer.say(`Moved ${task.title} ${direction === -1 ? 'up' : 'down'}`)
@@ -75,9 +86,7 @@ function complete(task: Task, origin: { x: number; y: number }): void {
 
   // Phase 7 turns this into a ripple from the checkbox. Firing it here keeps
   // the shader out of the list's business entirely.
-  window.dispatchEvent(
-    new CustomEvent('still:ripple', { detail: { x: origin.x, y: origin.y, strength: 1 } }),
-  )
+  ripple(origin)
 
   store.setDone(task.id, true)
   const snapshot = store.peekUndo()
@@ -126,6 +135,11 @@ function render(): void {
     taskList.render(groups, state, today, view)
   }
 
+  // The dialogs read from the same store as everything else, so a rename in
+  // one is visible in the other before the pointer has moved.
+  detail.sync(state, today)
+  manage.sync(state)
+
   announcer.summarise(Header.summary(pressure))
   quickAdd.setContext({ today, weekStart })
 }
@@ -142,6 +156,8 @@ root.append(
     ]),
   ]),
   undoBar.root,
+  detail.root,
+  manage.root,
 )
 
 if (store.readOnly) {
@@ -175,6 +191,10 @@ window.addEventListener('keydown', (event) => {
   const typing =
     target instanceof HTMLElement &&
     (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
+
+  // A modal owns the keyboard while it is up. Quick add is behind it and
+  // unreachable, so stealing the keystroke would only eat it.
+  if (detail.isOpen || manage.isOpen) return
 
   if (event.key === '/' && !typing && !event.metaKey && !event.ctrlKey) {
     event.preventDefault()

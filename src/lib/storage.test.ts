@@ -53,7 +53,7 @@ describe('parseState', () => {
         },
       ],
       projects: [{ id: 'p1', name: 'Uni', colorToken: 'teal', icon: 'book', archived: false, order: 0 }],
-      tags: [{ id: 'tag1', name: 'admin', colorToken: 'amber' }],
+      tags: [{ id: 'tag1', name: 'admin', colorToken: 'amber', archived: false }],
     }
     const result = parseState(serialiseState(state))
     expect(result.mode).toBe('read-write')

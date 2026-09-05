@@ -73,6 +73,37 @@ export function clear(node: Node): void {
   while (node.firstChild) node.removeChild(node.firstChild)
 }
 
+/**
+ * Put focus back somewhere real.
+ *
+ * `preferred` is usually the control that opened a dialog, but the edit made
+ * inside it may have destroyed that control: completing a task removes its
+ * row, changing a due date moves the row out of Today, deleting a project
+ * takes its whole line out of the manage list. Calling `.focus()` on a node
+ * that is no longer in the document does nothing at all, and focus lands on
+ * `<body>` — which is the end of keyboard navigation until the user tabs back
+ * in from the top of the page.
+ *
+ * So every caller names its own fallbacks, in order, and the first one that
+ * actually takes focus wins. A fallback has to be inside the same modal when
+ * one is still open: everything outside it is inert and will silently refuse.
+ */
+export function restoreFocus(
+  preferred: HTMLElement | null,
+  ...fallbacks: (HTMLElement | null | (() => HTMLElement | null))[]
+): boolean {
+  const candidates = [preferred, ...fallbacks]
+  for (const candidate of candidates) {
+    const node = typeof candidate === 'function' ? candidate() : candidate
+    if (!node || !node.isConnected) continue
+    node.focus()
+    // Connected is not the same as focusable: an inert or hidden node accepts
+    // the call and keeps focus exactly where it was.
+    if (document.activeElement === node) return true
+  }
+  return false
+}
+
 export function query<T extends Element>(root: ParentNode, selector: string): T {
   const found = root.querySelector<T>(selector)
   if (!found) throw new Error(`missing element: ${selector}`)

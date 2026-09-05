@@ -414,7 +414,7 @@ describe('viewTitle', () => {
   })
 
   it('prefixes a tag name with an at sign', () => {
-    const s: State = { ...defaultState(), tags: [{ id: 't', name: 'deep', colorToken: 'teal' }] }
+    const s: State = { ...defaultState(), tags: [{ id: 't', name: 'deep', colorToken: 'teal', archived: false }] }
     expect(viewTitle({ kind: 'tag', id: 't' }, s)).toBe('@deep')
   })
 })

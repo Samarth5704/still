@@ -78,7 +78,17 @@ describe('hidden elements stay hidden', () => {
    * `hidden` property needs its own opt-out. These are the elements the app
    * hides that way.
    */
-  const hiddenByScript = ['.undo-bar', '.move']
+  const hiddenByScript = [
+    '.undo-bar',
+    '.move',
+    // Phase 4. The detail dialog hides whole regions for a subtask, which has
+    // no date, project, tags or subtasks of its own. Every one of these sets
+    // `display`, so every one needs its own opt-out.
+    '.field',
+    '.field-row',
+    '.subtasks',
+    '.parent-prompt',
+  ]
 
   it.each(hiddenByScript)('%s has a [hidden] rule that beats its own display', (selector) => {
     const pattern = new RegExp(

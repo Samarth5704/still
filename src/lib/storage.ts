@@ -87,7 +87,13 @@ function parseProject(raw: unknown): Project | null {
 
 function parseTag(raw: unknown): Tag | null {
   if (!isRecord(raw) || typeof raw.id !== 'string') return null
-  return { id: raw.id, name: str(raw.name, 'untitled'), colorToken: str(raw.colorToken, 'slate') }
+  return {
+    id: raw.id,
+    name: str(raw.name, 'untitled'),
+    colorToken: str(raw.colorToken, 'slate'),
+    // Tags stored before archiving existed are live, which is what they were.
+    archived: bool(raw.archived, false),
+  }
 }
 
 function parseRecurrence(raw: unknown): Recurrence | null {

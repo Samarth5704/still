@@ -90,3 +90,51 @@ export function subtaskProgress(state: State, parentId: string): { done: number;
   const children = childrenOf(state, parentId)
   return { done: children.filter((t) => t.done).length, total: children.length }
 }
+
+/**
+ * The fields a subtask is not allowed to carry.
+ *
+ * Subtasks are checklist items, not tasks that happen to be indented. Keeping
+ * them thin is the whole reason this stays one level deep rather than becoming
+ * a tree: the moment a subtask can have its own date, project and recurrence,
+ * it is a task, and users will reasonably expect to nest one under it.
+ */
+export const SUBTASK_STRIPPED = {
+  due: null,
+  dueTime: null,
+  projectId: null,
+  tagIds: [],
+  recurrenceId: null,
+} as const
+
+/**
+ * Attach a freshly minted task to `parentId` as a subtask, thinned to a
+ * checklist item. The id and timestamps come from the caller, because minting
+ * them is the store's job.
+ */
+export function addSubtask(state: State, parentId: string, subtask: Task): Result<State, StoreError> {
+  const parent = byId(state, parentId)
+  if (!parent) return fail('not-found', `no task ${parentId}`)
+  if (parent.parentId !== null) {
+    return fail('parent-is-subtask', `${parentId} is itself a subtask; subtasks are one level deep`)
+  }
+  if (byId(state, subtask.id)) return fail('self-parent', `task ${subtask.id} already exists`)
+
+  const child: Task = { ...subtask, ...SUBTASK_STRIPPED, tagIds: [], parentId, order: childrenOf(state, parentId).length }
+  return ok({ ...state, tasks: [...state.tasks, child] })
+}
+
+/**
+ * True when every subtask is ticked and the parent is not.
+ *
+ * This is a *prompt*, never an action. Completing the last item on a checklist
+ * is strong evidence the task is finished, but it is not the same claim, and
+ * deciding a task is done is the user's call — so the UI offers to close the
+ * parent and waits.
+ */
+export function shouldPromptToCloseParent(state: State, parentId: string): boolean {
+  const parent = byId(state, parentId)
+  if (!parent || parent.done) return false
+  const { done, total } = subtaskProgress(state, parentId)
+  return total > 0 && done === total
+}

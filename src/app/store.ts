@@ -14,6 +14,10 @@ import { toISODate } from '../lib/dates.ts'
 import { parseState, serialiseState } from '../lib/storage.ts'
 import { computePressure } from '../lib/pressure.ts'
 import { nextOrder, reorder } from '../lib/views.ts'
+import * as catalog from '../lib/catalog.ts'
+import { addSubtask, deleteTask } from '../lib/tasks.ts'
+import type { CatalogError, ProjectDisposition, TagDisposition } from '../lib/catalog.ts'
+import type { DeleteOptions, StoreError } from '../lib/tasks.ts'
 import type { RecurrenceDraft } from '../lib/parse.ts'
 import type {
   ISODate,
@@ -21,6 +25,7 @@ import type {
   PressureSummary,
   Project,
   Recurrence,
+  Result,
   State,
   Tag,
   Task,
@@ -206,7 +211,7 @@ export class Store {
     const project: Project = {
       id: newId(),
       name,
-      colorToken: PROJECT_COLORS[this.state.projects.length % PROJECT_COLORS.length]!,
+      colorToken: catalog.nextColor(this.state.projects.length),
       icon: 'circle',
       archived: false,
       order: this.state.projects.length,
@@ -215,15 +220,83 @@ export class Store {
   }
 
   ensureTag(state: State, name: string): { state: State; tag: Tag } {
-    const existing = state.tags.find((t) => t.name.toLowerCase() === name.toLowerCase())
+    const existing = state.tags.find(
+      (t) => t.name.toLowerCase() === name.toLowerCase() && !t.archived,
+    )
     if (existing) return { state, tag: existing }
 
     const tag: Tag = {
       id: newId(),
       name,
-      colorToken: PROJECT_COLORS[state.tags.length % PROJECT_COLORS.length]!,
+      colorToken: catalog.nextColor(state.tags.length),
+      archived: false,
     }
     return { state: { ...state, tags: [...state.tags, tag] }, tag }
+  }
+
+  /**
+   * Run a pure catalogue transition and commit it, or hand the error back for
+   * the UI to render. Rejecting a blank or duplicate name is an expected
+   * condition a form has to show, not a bug to throw over.
+   */
+  private applyCatalog(
+    result: Result<State, CatalogError>,
+    label: string,
+  ): Result<State, CatalogError> {
+    if (result.ok) this.commit(result.value, label)
+    return result
+  }
+
+  createProject(name: string): Result<State, CatalogError> {
+    const made = catalog.createProject(this.state, newId(), name)
+    if (!made.ok) return made
+    this.commit(made.value.state, `Added project "${made.value.project.name}"`)
+    return { ok: true, value: made.value.state }
+  }
+
+  renameProject(id: string, name: string): Result<State, CatalogError> {
+    return this.applyCatalog(catalog.renameProject(this.state, id, name), 'Renamed project')
+  }
+
+  setProjectColor(id: string, colorToken: string): Result<State, CatalogError> {
+    return this.applyCatalog(catalog.setProjectColor(this.state, id, colorToken), 'Recoloured project')
+  }
+
+  setProjectArchived(id: string, archived: boolean): Result<State, CatalogError> {
+    return this.applyCatalog(
+      catalog.setProjectArchived(this.state, id, archived),
+      archived ? 'Archived project' : 'Restored project',
+    )
+  }
+
+  deleteProject(id: string, disposition: ProjectDisposition): Result<State, CatalogError> {
+    return this.applyCatalog(catalog.deleteProject(this.state, id, disposition), 'Deleted project')
+  }
+
+  createTag(name: string): Result<State, CatalogError> {
+    const made = catalog.createTag(this.state, newId(), name)
+    if (!made.ok) return made
+    this.commit(made.value.state, `Added tag "${made.value.tag.name}"`)
+    return { ok: true, value: made.value.state }
+  }
+
+  renameTag(id: string, name: string): Result<State, CatalogError> {
+    return this.applyCatalog(catalog.renameTag(this.state, id, name), 'Renamed tag')
+  }
+
+  setTagColor(id: string, colorToken: string): Result<State, CatalogError> {
+    return this.applyCatalog(catalog.setTagColor(this.state, id, colorToken), 'Recoloured tag')
+  }
+
+  setTagArchived(id: string, archived: boolean): Result<State, CatalogError> {
+    return this.applyCatalog(
+      catalog.setTagArchived(this.state, id, archived),
+      archived ? 'Archived tag' : 'Restored tag',
+    )
+  }
+
+  deleteTag(id: string, disposition: TagDisposition): Result<State, CatalogError> {
+    return this.applyCatalog(catalog.deleteTag(this.state, id, disposition), 'Deleted tag')
   }
 
   // ---- tasks -------------------------------------------------------------
@@ -319,12 +392,67 @@ export class Store {
     this.commit({ ...this.state, tasks }, done ? `Completed "${task.title}"` : `Reopened "${task.title}"`)
   }
 
+  /**
+   * Add a checklist item under `parentId`. `lib/tasks.ts` strips the fields a
+   * subtask is not allowed to carry, so there is exactly one place that decides
+   * what "thin" means.
+   */
+  addSubtask(parentId: string, title: string): Result<State, StoreError> {
+    const subtask: Task = {
+      id: newId(),
+      title,
+      notes: '',
+      done: false,
+      completedAt: null,
+      due: null,
+      dueTime: null,
+      priority: 'none',
+      projectId: null,
+      tagIds: [],
+      parentId,
+      order: 0,
+      recurrenceId: null,
+      createdAt: new Date().toISOString(),
+    }
+    const result = addSubtask(this.state, parentId, subtask)
+    if (result.ok) this.commit(result.value, `Added subtask "${title}"`)
+    return result
+  }
+
+  /**
+   * Delete a task. `options.subtasks` has no default: what happens to the
+   * children is the user's call, asked with the counts in front of them.
+   */
+  deleteTask(id: string, options: DeleteOptions): Result<State, StoreError> {
+    const task = this.state.tasks.find((t) => t.id === id)
+    const result = deleteTask(this.state, id, options)
+    if (result.ok) this.commit(result.value, `Deleted "${task?.title ?? 'task'}"`)
+    return result
+  }
+
+  /** Detach a recurrence from a task, leaving the task itself in place. */
+  clearRecurrence(id: string): void {
+    const task = this.state.tasks.find((t) => t.id === id)
+    if (!task || task.recurrenceId === null) return
+    const ruleId = task.recurrenceId
+    // Drop the rule with it when nothing else refers to it; an orphaned rule in
+    // storage is invisible weight that nothing will ever clean up.
+    const orphaned = this.state.tasks.every((t) => t.id === id || t.recurrenceId !== ruleId)
+    this.commit(
+      {
+        ...this.state,
+        tasks: this.state.tasks.map((t) => (t.id === id ? { ...t, recurrenceId: null } : t)),
+        recurrences: orphaned
+          ? this.state.recurrences.filter((r) => r.id !== ruleId)
+          : this.state.recurrences,
+      },
+      `Stopped repeating "${task.title}"`,
+    )
+  }
+
   move(id: string, direction: -1 | 1): void {
     const tasks = reorder(this.state.tasks, id, direction)
     if (tasks === this.state.tasks) return
     this.commit({ ...this.state, tasks })
   }
 }
-
-/** Token names resolved to real colours in the stylesheet. */
-const PROJECT_COLORS = ['teal', 'indigo', 'amber', 'plum', 'moss', 'clay']

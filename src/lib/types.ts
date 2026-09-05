@@ -36,6 +36,12 @@ export type Tag = {
   id: string
   name: string
   colorToken: string
+  /**
+   * Archived, like a project: retired from the sidebar and the pickers while
+   * every task that carries it still resolves the name it was filed under.
+   * Deleting is the other, louder option, and it asks what to do with them.
+   */
+  archived: boolean
 }
 
 /** 0 = Sunday … 6 = Saturday. */
