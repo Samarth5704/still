@@ -160,3 +160,118 @@ describe('hidden elements stay hidden', () => {
     }
   })
 })
+
+/*
+ * Phase 7's one rule: text never sits directly on the shader.
+ *
+ * Before Phase 7 the thing behind the app was a fixed gradient, so a heading
+ * with no surface under it was merely a style choice. It is a moving,
+ * hand-written noise field now, and every one of the selectors below was found
+ * by walking the app looking for words with nothing beneath them. The failure
+ * mode is the worst kind: it looks fine on the screenshot you happen to take,
+ * because the crest that eats the text arrives four seconds later.
+ *
+ * `--scrim` is the floor those surfaces share, and sharing it is the point —
+ * Phase 8's contrast script has one number to sample rather than a dozen
+ * hand-rolled alphas.
+ */
+/** Bodies of every innermost rule whose selector list contains `selector`. */
+function ruleBodies(selector: string): string[] {
+  const bodies: string[] = []
+  // Innermost blocks only: a body containing no braces cannot be an @media or
+  // an @layer, so this walks past the nesting without having to parse it.
+  for (const [, prelude, body] of css.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
+    const list = (prelude ?? '').split(',').map((p) => p.trim())
+    if (list.some((p) => p === selector || p.endsWith(` ${selector}`))) bodies.push(body ?? '')
+  }
+  return bodies
+}
+
+/*
+ * Phase 7's one rule: text never sits directly on the shader.
+ *
+ * Before Phase 7 the thing behind the app was a fixed gradient, so a heading
+ * with no surface under it was merely a style choice. It is a moving,
+ * hand-written noise field now, and every one of the selectors below was found
+ * by walking the app looking for words with nothing beneath them. The failure
+ * mode is the worst kind: it looks fine on the screenshot you happen to take,
+ * because the crest that eats the text arrives four seconds later.
+ *
+ * `--scrim` is the floor those surfaces share, and sharing it is the point —
+ * Phase 8's contrast script has one number to sample rather than a dozen
+ * hand-rolled alphas.
+ */
+describe('text never sits directly on the shader', () => {
+  /** Everything that carries text and is not inside a `.glass` panel. */
+  const scrimmed = ['.task', '.empty', '.view-title', '.group-title', '.cal-head', '.banner']
+
+  it.each(scrimmed)('%s paints the shared scrim beneath its text', (selector) => {
+    const bodies = ruleBodies(selector)
+    expect(bodies.length, `no rule for ${selector}`).toBeGreaterThan(0)
+    expect(
+      bodies.some((b) => b.includes('var(--glass-bg)')),
+      `${selector} must sit on var(--glass-bg)`,
+    ).toBe(true)
+  })
+
+  it('defines the scrim floor once, and builds the glass from it', () => {
+    expect(css).toMatch(/--scrim:\s*0?\.\d+;/)
+    // If --glass-bg ever hard-codes its alpha, every surface above silently
+    // stops being governed by the floor and the contrast script measures a
+    // number nothing uses.
+    expect(css).toMatch(/--glass-bg:\s*rgb\([^)]*var\(--scrim\)\)/)
+  })
+
+  it('leaves no hand-rolled scrim standing in for the floor', () => {
+    // The task row shipped at 0.55 through Phase 6 and was invisible as a
+    // defect for exactly as long as the background held still. A tint
+    // composited *over* the scrim is fine — the read-only banner is one — so
+    // what this forbids is a translucent wash in a block that never names the
+    // floor at all.
+    for (const selector of scrimmed) {
+      for (const body of ruleBodies(selector)) {
+        if (!/background(-color)?:/.test(body)) continue
+        const washes = [...body.matchAll(/rgb\([^)]*\/\s*(0?\.\d+)\s*\)/g)]
+        if (washes.length === 0) continue
+        expect(body, `${selector} washes at ${washes[0]![1]} without the scrim under it`).toContain(
+          'var(--glass-bg)',
+        )
+      }
+    }
+  })
+})
+
+describe('the surface layer', () => {
+  it('is fixed behind the app and takes no pointer events', () => {
+    const layout = layerBody('layout')
+    expect(layout).toContain('.still-surface')
+    expect(layout).toMatch(/\.still-surface\s*\{[^}]*z-index:\s*-1/s)
+    expect(layout).toMatch(/\.still-surface\s*\{[^}]*pointer-events:\s*none/s)
+  })
+
+  it('contains the canvas so a resize can never reach the app', () => {
+    // The render loop writes canvas.width/height. Containment is what makes
+    // "the loop touches no DOM and reads no layout" structurally true rather
+    // than true by inspection.
+    expect(layerBody('layout')).toMatch(/\.still-surface\s*\{[^}]*contain:\s*layout paint/s)
+  })
+})
+
+describe('glass', () => {
+  it('tints its outer shadow from a property the surface rewrites', () => {
+    // Hard-coding black here is the version of this that looks identical on a
+    // cool list and wrong on a hot one.
+    expect(css).toMatch(/--glass-shadow:\s*[^;]*var\(--glass-tint\)/)
+    expect(css).toMatch(/--glass-shadow-sm:\s*[^;]*var\(--glass-tint\)/)
+  })
+
+  it('gives the light theme the same tinted shadow rather than its own colour', () => {
+    const shadows = [...css.matchAll(/--glass-shadow:\s*([^;]*);/g)].map((m) => m[1]!)
+    expect(shadows.length).toBeGreaterThan(1)
+    for (const shadow of shadows) expect(shadow).toContain('var(--glass-tint)')
+  })
+
+  it('draws the top-edge highlight on task rows as well as panels', () => {
+    expect(layerBody('components')).toMatch(/\.glass::before,\s*\.task::before/)
+  })
+})

@@ -635,6 +635,121 @@ opacity beneath it. The shader is background, and background it stays.
 
 ---
 
+### Settled during Phase 7 — read before Phase 8
+
+**The surface reads the store, not the list.** `app/surface.ts` is handed a
+`PressureSummary` and the effects setting, and knows nothing else — not what a
+task is, not what "overdue" means. `lib/pressure.ts` had already turned the
+backlog into two numbers, so the header's word, the live summary and the
+shader are three readings of one definition rather than three definitions that
+happen to agree today. Nothing in that module runs per frame; the renderer's
+loop is still the only thing that does, and it still touches no DOM.
+
+**The first paint snaps; everything after it eases.** The two-second approach
+is the point of the whole channel — adding a task should read as the tide
+turning — but there is nothing to ease *from* on load, and easing anyway means
+a user with nine overdue tasks watches their backlog arrive as an animation
+that looks like a loading state for something already loaded.
+
+**The tinted shadow comes from the palette, not from the pixels.** Phase 7 asks
+for "a soft outer shadow tinted from the surface below", and the tempting
+reading is to sample the framebuffer — which puts a GPU readback in front of
+every paint and is exactly the approach liquid-glass-js was studied for and
+rejected over. `gl/tint.ts` derives it from the same ramp the shader is handed:
+`--glass-tint` is rewritten on `:root` whenever heat moves, so a late list casts
+a red-black shadow and a clear one a blue-black shadow, and a test sweeps the
+whole range asserting the shadow is never lighter than the trough it falls on.
+It is set in fallback mode too, because in fallback mode that ramp is still
+what is behind the chrome.
+
+**"Text never sits on the shader" cost more than it sounds.** Six surfaces were
+carrying text with nothing beneath them, and every one of them looked correct
+through Phase 6 because the thing behind the app was a fixed gradient that
+never moved. The list rows were the worst of them: 0.55 alpha, which is a tint,
+not a scrim, and a crest passing under a task title. They now use `--glass-bg`
+like everything else — the floor is one token so Phase 8's contrast script has
+one number to sample rather than a dozen hand-rolled alphas. The two headings
+and the group labels sit on plates sized to the words rather than full-width
+bars, so the surface still fills the rest of the row; the calendar's month
+name, stepper, "Today" and layout switch share one strip, because plating four
+controls separately is a worse-looking way to obey the same rule; and the
+read-only banner composites its warn wash *over* the scrim instead of using it
+as one. `style.test.ts` holds the list and rejects a wash in any block that
+never names the floor.
+
+**`--ink-faint` did not survive the move.** The dimmest ink in the palette was
+chosen against a still gradient and is the first thing to go on a plate over a
+moving surface, so the group labels stepped up to `--ink-dim`. They are still
+quieter than the rows.
+
+**Ripples are an event, not a call.** Completions dispatch `still:ripple` with
+the checkbox's own screen position and the surface listens on `window`. The
+list, the detail dialog's subtasks and the calendar all fire the same event
+without importing anything from `gl/`, and the surface never learns which one
+it came from.
+
+**`reduced` is not `off` and neither one is silent.** `resolveMode` is a pure
+table: no WebGL2 or `off` gives the CSS fallback, `reduced` gives a still
+shader, `full` gives a moving one. `uStill` damps flow, warp and ripples to
+nothing, so frequency, relief, seat level and palette still follow pressure and
+heat — collapsing `reduced` to the gradient is the tempting simplification and
+it quietly removes information from the users most likely to need it. `off`
+stops the loop rather than hiding it; a cancelled rAF is the difference between
+"effects off" and "effects invisible and still costing a GPU".
+
+**`effects` gained a fourth value, `auto`, and it is the default.** It is the
+same three-way shape as `theme` and it exists for the same reason: with three
+values an explicit `full` is indistinguishable from the default `full`, so
+following `prefers-reduced-motion` would overrule someone who asked for motion
+and ignoring it would overrule someone who asked for none. Only `auto` asks the
+OS; the other three outrank it in both directions, which is what makes the
+preference independent of the system setting rather than merely unaware of it.
+Phase 8's control has four options to draw, not three.
+
+The media query is **listened to**, not read at boot. A preference that only
+takes effect on the next reload is one the user has to discover is a reload
+away. The change handler re-resolves the mode and deliberately does not touch
+the pressure and heat targets — the backlog has not moved, and re-running
+`apply` would restart the two-second ease every time an OS setting was toggled.
+A motion change can never enter or leave the fallback, because only WebGL2 and
+an explicit `off` choose it, which is what lets the handler skip repainting the
+gradient.
+
+**Schema 1 → 2 migrates a stored `full` to `auto`.** Schema 1 defaulted to
+`full` and shipped no way to change it, so every stored `full` is a default
+nobody picked; reading it back as a choice would leave those users with an
+animated background that ignores their OS preference for good. The version bump
+is what stops the migration running once an effects control exists and a stored
+`full` becomes a real choice. `reduced` and `off` are carried across untouched —
+they could only ever have been set deliberately.
+
+**`--glass-tint` is written only when the colour changes.** A custom property on
+`:root` invalidates every rule that reads it, so each write is a document-wide
+style recalc. This was never per-frame — `apply` runs per store change and reads
+the *target* heat, while the ease happens inside the renderer — but a burst of
+edits still produced one invalidation each, measured at **60 writes in 44 ms
+across 30 quick-adds, every one of them the same colour**. The dedupe is string
+equality on the resolved 8-bit colour rather than an epsilon on heat: the string
+*is* the paint, so two heats that round to the same triple are the same pixel
+and anything that survives the comparison is a change someone could see. The
+shader's ease is untouched and stays smooth; CSS is simply no longer dragged
+along with it.
+
+**The scrim rule has a guard that catches code nobody has written yet.**
+`style.test.ts` names the six surfaces this phase fixed, which proves those six
+do not regress and proves nothing about the seventh. `app/scrim.test.ts` boots
+the real app under happy-dom, renders every view, walks every element that
+carries a text node, and requires each one to reach a scrim before it reaches
+the page — with the set of scrim-bearing classes *derived from the stylesheet*,
+so painting `var(--glass-bg)` in a new rule is all it takes to register one. A
+new panel added without a scrim fails on the day it is written and the failure
+names the element and quotes its text. It cannot resolve the cascade — happy-dom
+has no `@layer` — so it asks about containment rather than pixels; contrast
+across the palette range is still Phase 8's script, and this is the structural
+question underneath it.
+
+---
+
 ## Phase 8 — performance, accessibility, CI, README
 
 ### Performance budget, measured and reported

@@ -102,7 +102,18 @@
     --scrim: 0.82;
     --glass-bg: rgb(6 16 30 / var(--scrim));
     --glass-edge: rgb(134 224 214 / 0.16);
-    --glass-shadow: 0 16px 40px -20px rgb(0 0 0 / 0.7);
+    /*
+     * The outer shadow is tinted from the surface below — not by sampling the
+     * canvas, which would put a GPU readback in front of every paint, but from
+     * the same palette the shader is handed. `app/surface.ts` rewrites
+     * `--glass-tint` whenever heat moves, so a late list casts a red-black
+     * shadow and a clear one a blue-black shadow. The value here is the cool
+     * end, so the chrome is already seated correctly before the first frame.
+     */
+    --glass-tint: rgb(4 10 18 / 0.62);
+    --glass-shadow: 0 16px 40px -20px var(--glass-tint);
+    /* A task row is 40px tall in a stack of its own; the panel shadow fogs it. */
+    --glass-shadow-sm: 0 6px 16px -10px var(--glass-tint);
     --blur: 20px;
 
     --radius: 14px;
@@ -130,7 +141,7 @@
       --ink-faint: rgb(96 122 134);
       --glass-bg: rgb(244 250 250 / var(--scrim));
       --glass-edge: rgb(12 56 76 / 0.12);
-      --glass-shadow: 0 16px 40px -24px rgb(12 56 76 / 0.45);
+      --glass-shadow: 0 16px 40px -24px var(--glass-tint);
       --warn: rgb(176 74 20);
       --warn-ink: rgb(132 52 12);
       color-scheme: light;
@@ -143,9 +154,11 @@
     font-family: var(--font);
     color: var(--ink);
     /*
-     * The static ground. Phase 7 puts the live surface behind this; until then
-     * it is the same palette as a gradient, which is what the WebGL-less
-     * fallback will use too, so this is not throwaway styling.
+     * The ground *under* the surface, painted from the same palette. The
+     * canvas covers it once the module boots, so what this actually does is
+     * hold the first paint: without it the page flashes white between the HTML
+     * arriving and the first frame, which is the one moment the whole premise
+     * of the app is on screen and wrong.
      */
     background:
       radial-gradient(120% 90% at 15% 0%, rgb(12 56 76 / 0.9), transparent 60%),
@@ -194,6 +207,36 @@
 }
 
 @layer layout {
+  /*
+   * The surface. Fixed and behind everything, with no pointer target of its
+   * own: a full-screen canvas that swallowed clicks would eat every gap
+   * between the cards.
+   *
+   * `contain: layout paint` is the structural half of "the render loop touches
+   * no DOM". The loop only ever writes `canvas.width`/`height`, but a canvas
+   * resize inside normal flow is a layout invalidation, and containment makes
+   * it impossible for that to reach the app even if something here changes.
+   */
+  .still-surface {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    overflow: hidden;
+    contain: layout paint;
+  }
+
+  .surface-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* `display: block` above beats the user-agent `[hidden]` rule. */
+  .surface-canvas[hidden] {
+    display: none;
+  }
+
   #app {
     display: flex;
     flex-direction: column;
@@ -258,7 +301,13 @@
     position: relative;
   }
 
-  .glass::before {
+  /*
+   * The one-pixel highlight. A task row is a card like any other, so it gets
+   * the same edge — it is just not `.glass`, because it carries its own radius
+   * and its own shadowless weight.
+   */
+  .glass::before,
+  .task::before {
     content: '';
     position: absolute;
     inset: 0;
@@ -560,11 +609,31 @@
 
   /* ---- list ---- */
 
+  /*
+   * Both headings sit on a plate rather than on the shader.
+   *
+   * They used to be bare text on the page background, which was safe only
+   * because that background was a fixed gradient. It is a moving surface now,
+   * and "Today" over a passing crest is exactly the failure the scrim rule
+   * exists to prevent. `width: fit-content` keeps the plate the size of the
+   * words, so the shader still fills the rest of the row and the list does not
+   * turn into a stack of full-width bars.
+   */
+  .view-title,
+  .group-title {
+    width: fit-content;
+    max-width: 100%;
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--blur)) saturate(1.4);
+    border-radius: var(--radius-sm);
+  }
+
   .view-title {
     font-family: var(--font-display);
     font-size: clamp(1.5rem, 4cqi, 2rem);
     font-weight: 400;
-    padding: 0.25rem 0.25rem 0.75rem;
+    margin-bottom: 0.5rem;
+    padding: 0.15rem 0.6rem 0.3rem;
   }
 
   .view-title:focus-visible {
@@ -579,8 +648,14 @@
     font-size: 0.76rem;
     text-transform: uppercase;
     letter-spacing: 0.1em;
-    color: var(--ink-faint);
-    padding: 0 0.25rem 0.4rem;
+    /*
+     * `--ink-faint` was chosen against a still gradient. On a plate over a
+     * moving surface the dimmest ink in the palette is the first thing to go,
+     * so the group label steps up one rung. It is still quieter than the rows.
+     */
+    color: var(--ink-dim);
+    margin-bottom: 0.4rem;
+    padding: 0.15rem 0.5rem 0.2rem;
   }
 
   .group[data-tone='overdue'] .group-title {
@@ -600,19 +675,21 @@
     gap: 0.65rem;
     padding: 0.5rem 0.6rem;
     border-radius: var(--radius-sm);
-    background: rgb(6 16 30 / 0.55);
-    backdrop-filter: blur(12px) saturate(1.3);
+    /*
+     * `--glass-bg`, not a hand-rolled alpha. This row was 0.55 while the thing
+     * behind it was a fixed gradient and nothing moved; over the live surface
+     * that is a crest passing under a task title. The floor is the floor, and
+     * it is one token so Phase 8's contrast script has one number to sample.
+     */
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--blur)) saturate(1.4);
+    box-shadow: var(--glass-shadow-sm);
+    position: relative;
     border-left: 3px solid transparent;
     transition:
       opacity var(--dur) var(--ease),
       translate var(--dur) var(--ease),
       background var(--dur) var(--ease);
-  }
-
-  @media (prefers-color-scheme: light) {
-    :root:not([data-theme='dark']) .task {
-      background: rgb(250 253 253 / 0.72);
-    }
   }
 
   .task:hover {
@@ -768,6 +845,13 @@
 
   /* ---- empty states ---- */
 
+  /*
+   * An empty list is the state this whole app is built to reward, so it is also
+   * the state where the surface is at its calmest and most visible. That is not
+   * a reason to put the words straight on it: the same scrim rule applies, and
+   * a panel that reads as deliberate is better than text that happens to be
+   * legible today.
+   */
   .empty {
     display: flex;
     flex-direction: column;
@@ -775,6 +859,10 @@
     gap: 0.6rem;
     padding: clamp(2rem, 8vh, 4.5rem) 1.25rem;
     text-align: center;
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--blur)) saturate(1.4);
+    border-radius: var(--radius);
+    box-shadow: var(--glass-shadow);
     animation: rise 500ms var(--ease) both;
   }
 
@@ -903,7 +991,15 @@
 
   .banner {
     padding: 0.6rem 1rem;
-    background: rgb(255 178 122 / 0.16);
+    /*
+     * The warn wash composited *over* the scrim rather than used as the
+     * background. A 0.16 tint is a tint, not a surface, and this line is the
+     * one the user reads when their data will not be saved.
+     */
+    background:
+      linear-gradient(rgb(255 178 122 / 0.16), rgb(255 178 122 / 0.16)),
+      var(--glass-bg);
+    backdrop-filter: blur(var(--blur)) saturate(1.4);
     border-bottom: 1px solid rgb(255 178 122 / 0.3);
     color: var(--warn-ink);
     font-size: 0.88rem;
@@ -1791,12 +1887,24 @@
     }
   }
 
+  /*
+   * The month name, the stepper, "Today" and the layout switch are four
+   * text-bearing controls with no surface of their own, so the strip that
+   * holds them becomes the surface. Plating each one separately would give the
+   * calendar four floating pills above a panel, which is a worse-looking way
+   * to obey the same rule.
+   */
   .cal-head {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
+    padding: 0.3rem 0.5rem;
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--blur)) saturate(1.4);
+    border-radius: var(--radius);
+    box-shadow: var(--glass-shadow-sm);
   }
 
   .cal-nav {

@@ -6,15 +6,30 @@
  * mode here testable.
  */
 import { isISODate } from './dates.ts'
-import type { Priority, Project, Recurrence, Settings, State, Tag, Task } from './types.ts'
+import type {
+  EffectsSetting,
+  Priority,
+  Project,
+  Recurrence,
+  Settings,
+  State,
+  Tag,
+  Task,
+} from './types.ts'
 
-export const SCHEMA_VERSION = 1
+/**
+ * 2 added `auto` to `effects` and made it the default. The bump is what makes
+ * the migration below safe to stop running: once a build with an effects
+ * control exists, a stored `full` is a choice, and a migration that could not
+ * tell the difference would quietly overrule it every time the app opened.
+ */
+export const SCHEMA_VERSION = 2
 
 export function defaultSettings(): Settings {
   return {
     schemaVersion: SCHEMA_VERSION,
     theme: 'system',
-    effects: 'full',
+    effects: 'auto',
     weekStartsOn: 1,
     defaultProjectId: null,
   }
@@ -137,13 +152,28 @@ function parseRecurrence(raw: unknown): Recurrence | null {
   return rule
 }
 
-function parseSettings(raw: unknown): Settings {
+const EFFECTS = ['auto', 'full', 'reduced', 'off'] as const
+
+/**
+ * Schema 1 had no `auto` and defaulted to `full`, and shipped no way to change
+ * it — so every stored `full` from that version is a default nobody picked,
+ * not a request for motion. Reading it as a choice would leave those users
+ * with an animated background that ignores their OS preference forever.
+ * Anything else stored is left alone: `reduced` and `off` could only have been
+ * set deliberately.
+ */
+function migrateEffects(raw: unknown, storedVersion: number): EffectsSetting {
+  const stored = oneOf<EffectsSetting>(raw, EFFECTS, 'auto')
+  return storedVersion < 2 && stored === 'full' ? 'auto' : stored
+}
+
+function parseSettings(raw: unknown, storedVersion: number): Settings {
   const base = defaultSettings()
   if (!isRecord(raw)) return base
   return {
     schemaVersion: SCHEMA_VERSION,
     theme: oneOf(raw.theme, ['dark', 'light', 'system'] as const, base.theme),
-    effects: oneOf(raw.effects, ['full', 'reduced', 'off'] as const, base.effects),
+    effects: migrateEffects(raw.effects, storedVersion),
     weekStartsOn: raw.weekStartsOn === 0 ? 0 : 1,
     defaultProjectId: nullableStr(raw.defaultProjectId),
   }
@@ -172,7 +202,10 @@ export function parseState(raw: string | null): LoadResult {
     return { state: defaultState(), mode: 'read-write', reason: 'malformed' }
   }
 
-  const storedVersion = isRecord(parsed.settings) ? num(parsed.settings.schemaVersion, SCHEMA_VERSION) : SCHEMA_VERSION
+  // A settings block with no version at all is schema 1: the field has existed
+  // for as long as the format has, so its absence means "written before this
+  // build cared", not "written by this build".
+  const storedVersion = isRecord(parsed.settings) ? num(parsed.settings.schemaVersion, 1) : 1
   if (storedVersion > SCHEMA_VERSION) {
     // Written by a newer build. Open read-only rather than reading it wrongly
     // and writing our misreading back over the top.
@@ -181,7 +214,7 @@ export function parseState(raw: string | null): LoadResult {
 
   return {
     state: {
-      settings: parseSettings(parsed.settings),
+      settings: parseSettings(parsed.settings, storedVersion),
       tasks: parseArray(parsed.tasks, parseTask),
       projects: parseArray(parsed.projects, parseProject),
       tags: parseArray(parsed.tags, parseTag),

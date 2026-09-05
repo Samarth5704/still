@@ -5,9 +5,9 @@
  * modules own their nodes. This file connects them and owns the two things
  * nobody else should — the URL and the keyboard.
  *
- * The shader is not here yet. Phase 7 attaches it to the same store and listens
- * for the `still:ripple` events fired below, which is why completions already
- * report where on screen they happened.
+ * The surface is attached to the same store as everything else and listens for
+ * the `still:ripple` events fired below, so the list never has to know that a
+ * shader exists and the shader never has to know what a task is.
  */
 import './style.css'
 
@@ -16,6 +16,7 @@ import { Calendar } from './app/calendar.ts'
 import { Header, Nav } from './app/chrome.ts'
 import { Manage } from './app/manage.ts'
 import { QuickAdd } from './app/quickadd.ts'
+import { AppSurface } from './app/surface.ts'
 import { Store } from './app/store.ts'
 import { TaskDetail } from './app/detail.ts'
 import { TaskList } from './app/tasklist.ts'
@@ -32,13 +33,14 @@ let view: View = parseHash(location.hash)
 
 const root = query<HTMLElement>(document, '#app')
 const announcer = new Announcer(document.body)
+const surface = new AppSurface(document.body)
 
 const manage = new Manage(store, { announce: (message) => announcer.say(message) })
 const header = new Header(() => manage.open())
 const nav = new Nav()
 const undoBar = new UndoBar()
 
-/** A completion anywhere reports where on screen it happened; Phase 7 rides on it. */
+/** A completion anywhere reports where on screen it happened; the surface rides on it. */
 function ripple(origin: { x: number; y: number }): void {
   window.dispatchEvent(
     new CustomEvent('still:ripple', { detail: { x: origin.x, y: origin.y, strength: 1 } }),
@@ -116,8 +118,8 @@ const calendar = new Calendar({
 function complete(task: Task, origin: { x: number; y: number }, source: Source = 'list'): void {
   if (task.done) return
 
-  // Phase 7 turns this into a ripple from the checkbox. Firing it here keeps
-  // the shader out of the list's business entirely.
+  // A ripple from the checkbox that was actually tapped. Firing it as an event
+  // keeps the shader out of the list's business entirely.
   ripple(origin)
 
   let advancedTo: ISODate | null = null
@@ -181,6 +183,11 @@ function render(): void {
   const today = store.getToday()
   const pressure = store.getPressure()
   const weekStart = state.settings.weekStartsOn
+
+  // The surface first: it is the slowest thing to react (two seconds of
+  // easing), so starting it before the DOM work gives it a head start rather
+  // than a frame's worth of catch-up.
+  surface.apply(pressure, state.settings.effects)
 
   header.render(pressure)
   nav.render(state, viewCounts(state, today), view)
