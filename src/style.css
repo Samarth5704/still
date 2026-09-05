@@ -1,96 +1,961 @@
-:root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+/*
+ * Still — the app's stylesheet.
+ *
+ * Layered so specificity never becomes an argument: later layers win, and
+ * within a layer the rules are plain. No framework, no utility classes beyond
+ * `.sr-only`, no preprocessor.
+ *
+ * The palette mirrors src/gl/palette.ts. Those values are the source of truth
+ * for the shader and the CSS fallback; the ones here are the UI chrome that
+ * sits on top of them, tuned to stay legible across the whole range the surface
+ * can reach (Phase 8 verifies that claim with a script rather than a promise).
+ */
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+@layer reset, tokens, base, layout, components, utilities;
 
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
-}
-
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
-}
-
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-#app {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
-}
-
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.vanilla:hover {
-  filter: drop-shadow(0 0 2em #3178c6aa);
-}
-
-.card {
-  padding: 2em;
-}
-
-.read-the-docs {
-  color: #888;
-}
-
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
+@layer reset {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
   }
-  a:hover {
-    color: #747bff;
+
+  * {
+    margin: 0;
   }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    min-height: 100svh;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  img,
+  svg {
+    display: block;
+    max-width: 100%;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+
   button {
-    background-color: #f9f9f9;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  ul {
+    list-style: none;
+    padding: 0;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-weight: 500;
+    line-height: 1.2;
+    text-wrap: balance;
+  }
+}
+
+@layer tokens {
+  :root {
+    /* The cool ramp, from src/gl/palette.ts. */
+    --c-deep: rgb(6 16 30);
+    --c-mid: rgb(12 56 76);
+    --c-light: rgb(28 112 124);
+    --c-foam: rgb(134 224 214);
+
+    /* Project and tag colours. Named tokens so state stores a name, not a hex. */
+    --c-teal: rgb(74 194 186);
+    --c-indigo: rgb(126 142 232);
+    --c-amber: rgb(232 170 74);
+    --c-plum: rgb(202 130 190);
+    --c-moss: rgb(132 190 118);
+    --c-clay: rgb(224 132 108);
+
+    --ink: rgb(232 240 244);
+    --ink-dim: rgb(168 188 198);
+    --ink-faint: rgb(122 146 158);
+
+    --warn: rgb(255 178 122);
+    --warn-ink: rgb(255 214 184);
+
+    /*
+     * Glass. A real backdrop-filter over real DOM — never a canvas, never a
+     * page screenshot. `--scrim` is the floor: the minimum opacity that has to
+     * sit under text no matter what the surface behind is doing. Phase 8's
+     * contrast script samples against exactly this value.
+     */
+    --scrim: 0.82;
+    --glass-bg: rgb(6 16 30 / var(--scrim));
+    --glass-edge: rgb(134 224 214 / 0.16);
+    --glass-shadow: 0 16px 40px -20px rgb(0 0 0 / 0.7);
+    --blur: 20px;
+
+    --radius: 14px;
+    --radius-sm: 9px;
+    --gap: 1rem;
+    --tap: 44px;
+
+    --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --font-display: 'Fraunces', Georgia, serif;
+
+    --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --dur: 220ms;
+
+    color-scheme: dark;
+  }
+
+  /*
+   * Light theme. The surface behind it is the same shader, seated lighter; the
+   * chrome inverts so text keeps its contrast against a paler backdrop.
+   */
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme='dark']) {
+      --ink: rgb(14 32 42);
+      --ink-dim: rgb(58 84 96);
+      --ink-faint: rgb(96 122 134);
+      --glass-bg: rgb(244 250 250 / var(--scrim));
+      --glass-edge: rgb(12 56 76 / 0.12);
+      --glass-shadow: 0 16px 40px -24px rgb(12 56 76 / 0.45);
+      --warn: rgb(176 74 20);
+      --warn-ink: rgb(132 52 12);
+      color-scheme: light;
+    }
+  }
+}
+
+@layer base {
+  body {
+    font-family: var(--font);
+    color: var(--ink);
+    /*
+     * The static ground. Phase 7 puts the live surface behind this; until then
+     * it is the same palette as a gradient, which is what the WebGL-less
+     * fallback will use too, so this is not throwaway styling.
+     */
+    background:
+      radial-gradient(120% 90% at 15% 0%, rgb(12 56 76 / 0.9), transparent 60%),
+      radial-gradient(100% 80% at 85% 100%, rgb(28 112 124 / 0.35), transparent 55%),
+      var(--c-deep);
+    background-attachment: fixed;
+  }
+
+  @media (prefers-color-scheme: light) {
+    body:not([data-theme='dark']) {
+      background:
+        radial-gradient(120% 90% at 15% 0%, rgb(134 224 214 / 0.55), transparent 60%),
+        radial-gradient(100% 80% at 85% 100%, rgb(28 112 124 / 0.18), transparent 55%),
+        rgb(236 244 246);
+    }
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--c-foam);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: rgb(134 224 214 / 0.28);
+  }
+
+  .skip-link {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    translate: -50% -120%;
+    z-index: 20;
+    padding: 0.6rem 1rem;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-edge);
+    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+    color: var(--ink);
+    text-decoration: none;
+    transition: translate var(--dur) var(--ease);
+  }
+
+  .skip-link:focus-visible {
+    translate: -50% 0;
+  }
+}
+
+@layer layout {
+  #app {
+    display: flex;
+    flex-direction: column;
+    min-height: 100svh;
+  }
+
+  .app-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap);
+    padding: 0.75rem clamp(0.75rem, 3vw, 1.75rem);
+    border-bottom: 1px solid var(--glass-edge);
+  }
+
+  .app-body {
+    flex: 1;
+    display: grid;
+    grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);
+    gap: clamp(0.75rem, 2vw, 1.75rem);
+    padding: clamp(0.75rem, 2vw, 1.75rem);
+    align-items: start;
+  }
+
+  .app-main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap);
+    min-width: 0;
+  }
+
+  .list-frame {
+    container-type: inline-size;
+    container-name: list;
+    min-width: 0;
+  }
+
+  /*
+   * The sidebar becomes a bottom bar. Only the grid itself changes here; the
+   * nav's own mobile rules live beside its desktop ones in the components
+   * layer, because a later layer beats an earlier one no matter how specific
+   * the selector is — putting them here would leave `position: sticky` winning.
+   */
+  @media (width < 720px) {
+    .app-body {
+      grid-template-columns: minmax(0, 1fr);
+      padding-bottom: calc(var(--tap) + 2.5rem);
+    }
+  }
+}
+
+@layer components {
+  .glass {
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--blur)) saturate(1.4);
+    border-radius: var(--radius);
+    box-shadow: var(--glass-shadow);
+    /* The one-pixel highlight along the top edge that makes glass read as glass. */
+    position: relative;
+  }
+
+  .glass::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    border-top: 1px solid rgb(255 255 255 / 0.14);
+    pointer-events: none;
+  }
+
+  /* ---- header ---- */
+
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--tap);
+    padding-inline: 0.25rem;
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .wordmark {
+    font-family: var(--font-display);
+    font-size: 1.6rem;
+    font-weight: 400;
+    letter-spacing: 0.01em;
+    font-optical-sizing: auto;
+  }
+
+  .pressure {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    line-height: 1.25;
+  }
+
+  .pressure-label {
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    /* The word is the readable half of the surface; it is never the quiet half. */
+    color: var(--ink);
+  }
+
+  .app-header[data-pressure='heavy'] .pressure-label {
+    color: var(--warn-ink);
+  }
+
+  .pressure-detail {
+    font-size: 0.8rem;
+    color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .pressure-detail.has-overdue {
+    color: var(--warn);
+  }
+
+  /* ---- nav ---- */
+
+  .app-nav {
+    padding: 0.5rem;
+    position: sticky;
+    top: calc(var(--tap) + 1.5rem);
+  }
+
+  .nav-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .nav-heading {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--ink-faint);
+    padding: 0.9rem 0.6rem 0.35rem;
+  }
+
+  .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-height: var(--tap);
+    padding: 0.45rem 0.6rem;
+    border-radius: var(--radius-sm);
+    color: var(--ink-dim);
+    text-decoration: none;
+    transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+  }
+
+  .nav-link:hover {
+    background: rgb(134 224 214 / 0.08);
+    color: var(--ink);
+  }
+
+  .nav-link[aria-current='page'] {
+    background: rgb(134 224 214 / 0.14);
+    color: var(--ink);
+  }
+
+  .nav-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .nav-count {
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-faint);
+  }
+
+  .nav-link.has-alert .nav-count {
+    color: var(--warn);
+  }
+
+  .nav-projects .nav-icon {
+    color: var(--nav-dot, var(--ink-faint));
+  }
+
+  .icon {
+    width: 1.15em;
+    height: 1.15em;
+    flex: none;
+  }
+
+  @media (width < 720px) {
+    .app-nav {
+      position: fixed;
+      inset: auto 0 0 0;
+      z-index: 10;
+      top: auto;
+      border-top: 1px solid var(--glass-edge);
+      border-radius: 0;
+      padding: 0.25rem 0.5rem calc(0.25rem + env(safe-area-inset-bottom));
+    }
+
+    .app-nav .nav-list {
+      flex-direction: row;
+      justify-content: space-around;
+    }
+
+    /* Projects and their heading are a desktop affordance; the bar keeps to the
+       four primary views so each target stays comfortably wide. */
+    .app-nav .nav-heading,
+    .app-nav .nav-projects {
+      display: none;
+    }
+
+    .app-nav .nav-link {
+      flex-direction: column;
+      justify-content: center;
+      gap: 0.1rem;
+      font-size: 0.68rem;
+      padding: 0.3rem 0.4rem;
+      min-width: var(--tap);
+    }
+
+    .app-nav .nav-count {
+      font-size: 0.68rem;
+      line-height: 1;
+    }
+
+    /* An empty count would otherwise leave the labels sitting at two heights. */
+    .app-nav .nav-count[hidden] {
+      display: block;
+      visibility: hidden;
+    }
+  }
+
+  /* ---- quick add ---- */
+
+  .quick-add {
+    padding: 0.5rem 0.5rem 0.35rem;
+  }
+
+  .quick-add-form {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .quick-add-input {
+    flex: 1;
+    min-width: 0;
+    min-height: var(--tap);
+    padding: 0.5rem 0.65rem;
+    background: transparent;
+    border: none;
+    font-size: 1rem;
+  }
+
+  .quick-add-input:focus {
+    outline: none;
+  }
+
+  .quick-add:has(.quick-add-input:focus-visible) {
+    outline: 2px solid var(--c-foam);
+    outline-offset: 2px;
+  }
+
+  .quick-add-input::placeholder {
+    color: var(--ink-faint);
+  }
+
+  .quick-add-submit {
+    display: grid;
+    place-items: center;
+    width: var(--tap);
+    height: var(--tap);
+    border-radius: var(--radius-sm);
+    color: var(--ink-dim);
+    transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+  }
+
+  .quick-add-submit:hover {
+    background: rgb(134 224 214 / 0.12);
+    color: var(--ink);
+  }
+
+  .quick-add-preview {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0 0.65rem 0.4rem;
+    min-height: 1.6rem;
+    font-size: 0.82rem;
+    color: var(--ink-faint);
+  }
+
+  .quick-add-preview.is-active .preview-hint {
+    color: var(--ink);
+  }
+
+  .preview-hint.is-warning {
+    color: var(--warn);
+  }
+
+  .preview-chips {
+    display: contents;
+  }
+
+  /* ---- chips ---- */
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    padding: 0.12rem 0.45rem;
+    border-radius: 999px;
+    background: rgb(134 224 214 / 0.1);
+    color: var(--ink-dim);
+    font-size: 0.78rem;
+    white-space: nowrap;
+  }
+
+  .chip .icon {
+    width: 0.95em;
+    height: 0.95em;
+  }
+
+  .chip-parsed {
+    background: rgb(134 224 214 / 0.16);
+    color: var(--ink);
+  }
+
+  .chip-due.is-overdue {
+    background: rgb(255 178 122 / 0.16);
+    color: var(--warn-ink);
+  }
+
+  .chip-priority {
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    background: rgb(255 178 122 / 0.14);
+    color: var(--warn-ink);
+  }
+
+  .chip-priority[data-priority='medium'] {
+    background: rgb(134 224 214 / 0.14);
+    color: var(--ink);
+  }
+
+  .chip-project .dot {
+    width: 0.5em;
+    height: 0.5em;
+    border-radius: 50%;
+    background: var(--chip, var(--c-teal));
+  }
+
+  .chip-progress {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---- list ---- */
+
+  .view-title {
+    font-family: var(--font-display);
+    font-size: clamp(1.5rem, 4cqi, 2rem);
+    font-weight: 400;
+    padding: 0.25rem 0.25rem 0.75rem;
+  }
+
+  .view-title:focus-visible {
+    outline-offset: 4px;
+  }
+
+  .group {
+    margin-bottom: 1.25rem;
+  }
+
+  .group-title {
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--ink-faint);
+    padding: 0 0.25rem 0.4rem;
+  }
+
+  .group[data-tone='overdue'] .group-title {
+    color: var(--warn);
+  }
+
+  .group-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .task {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 0.65rem;
+    padding: 0.5rem 0.6rem;
+    border-radius: var(--radius-sm);
+    background: rgb(6 16 30 / 0.55);
+    backdrop-filter: blur(12px) saturate(1.3);
+    border-left: 3px solid transparent;
+    transition:
+      opacity var(--dur) var(--ease),
+      translate var(--dur) var(--ease),
+      background var(--dur) var(--ease);
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme='dark']) .task {
+      background: rgb(250 253 253 / 0.72);
+    }
+  }
+
+  .task:hover {
+    background: color-mix(in srgb, var(--glass-bg) 88%, var(--c-foam));
+  }
+
+  /* Priority is an edge colour AND a chip; never colour on its own. */
+  .task[data-priority='medium'] {
+    border-left-color: rgb(134 224 214 / 0.5);
+  }
+  .task[data-priority='high'] {
+    border-left-color: var(--c-amber);
+  }
+  .task[data-priority='urgent'] {
+    border-left-color: var(--c-clay);
+  }
+
+  .task.is-leaving {
+    opacity: 0;
+    translate: 12px 0;
+    pointer-events: none;
+  }
+
+  /*
+   * A 44px button around a 1.35rem ring: the target is the whole square, the
+   * drawn circle is what you aim at. The tick inside is transparent until
+   * hover, so the row reads as unchecked but the affordance is discoverable.
+   */
+  .check {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: var(--tap);
+    height: var(--tap);
+    margin: -0.15rem 0 0 -0.35rem;
+    border-radius: 50%;
+    color: transparent;
+    transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
+  }
+
+  .check::before {
+    content: '';
+    position: absolute;
+    width: 1.35rem;
+    height: 1.35rem;
+    border: 1.5px solid var(--ink-faint);
+    border-radius: 50%;
+    transition: border-color var(--dur) var(--ease);
+  }
+
+  .check .check-mark {
+    position: relative;
+    width: 0.95rem;
+    height: 0.95rem;
+    stroke-width: 2.5;
+  }
+
+  .check:hover {
+    color: var(--c-foam);
+  }
+
+  .check:hover::before {
+    border-color: var(--c-foam);
+  }
+
+  .task.is-leaving .check {
+    color: var(--c-foam);
+  }
+
+  .task-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
+    padding-top: 0.5rem;
+  }
+
+  .task-title {
+    text-align: left;
+    font-size: 0.98rem;
+    color: var(--ink);
+    line-height: 1.35;
+    word-break: break-word;
+    /*
+     * Padding grows the hit area to the 44px minimum; the matching negative
+     * margin means the row still looks exactly as tight as it did. A title is
+     * the largest thing on the row and should not be the hardest to hit.
+     */
+    padding-block: 0.72rem;
+    margin-block: -0.72rem;
+  }
+
+  .task-title:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .task.is-leaving .task-title {
+    text-decoration: line-through;
+    color: var(--ink-faint);
+  }
+
+  .task-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+  }
+
+  .task-meta:empty {
+    display: none;
+  }
+
+  .task-moves {
+    display: flex;
+    flex-direction: column;
+    padding-top: 0.25rem;
+  }
+
+  .move {
+    display: grid;
+    place-items: center;
+    width: var(--tap);
+    height: calc(var(--tap) / 2);
+    color: var(--ink-faint);
+    border-radius: var(--radius-sm);
+  }
+
+  .move:hover {
+    color: var(--ink);
+    background: rgb(134 224 214 / 0.1);
+  }
+
+  .move[hidden] {
+    display: none;
+  }
+
+  /* Half-height chevrons are fine under a mouse and far too small under a thumb. */
+  @media (pointer: coarse) {
+    .move {
+      height: var(--tap);
+    }
+  }
+
+  /* A narrow list stacks the meta under a full-width title. */
+  @container list (width < 380px) {
+    .task {
+      gap: 0.4rem;
+    }
+    .chip-tag {
+      display: none;
+    }
+  }
+
+  /* ---- empty states ---- */
+
+  .empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem;
+    padding: clamp(2rem, 8vh, 4.5rem) 1.25rem;
+    text-align: center;
+    animation: rise 500ms var(--ease) both;
+  }
+
+  .empty h2 {
+    font-family: var(--font-display);
+    font-size: clamp(1.35rem, 5cqi, 1.9rem);
+    font-weight: 300;
+  }
+
+  .empty p {
+    max-width: 46ch;
+    color: var(--ink-dim);
+    text-wrap: pretty;
+  }
+
+  /* The cleared state gets the one piece of ornament in the app: a still ring. */
+  .stillness {
+    width: clamp(64px, 18cqi, 108px);
+    aspect-ratio: 1;
+    margin-bottom: 0.5rem;
+    border-radius: 50%;
+    border: 1px solid rgb(134 224 214 / 0.35);
+    background: radial-gradient(circle at 50% 45%, rgb(134 224 214 / 0.18), transparent 68%);
+    animation: breathe 7s ease-in-out infinite;
+  }
+
+  .examples {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    text-align: left;
+  }
+
+  .examples li {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.1rem;
+  }
+
+  .examples code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.86rem;
+    color: var(--ink);
+    background: rgb(134 224 214 / 0.1);
+    padding: 0.2rem 0.45rem;
+    border-radius: var(--radius-sm);
+  }
+
+  .examples .gloss {
+    font-size: 0.8rem;
+    color: var(--ink-faint);
+    padding-inline: 0.45rem;
+  }
+
+  /* ---- undo ---- */
+
+  .undo-bar {
+    /*
+     * This one floats over the list rather than over the surface, so the shared
+     * glass scrim is not enough: at 0.82 the rows underneath read straight
+     * through it. Text never sits on anything it cannot be read against.
+     */
+    --scrim: 0.97;
+    position: fixed;
+    left: 50%;
+    bottom: clamp(1rem, 4vh, 2rem);
+    translate: -50% 0;
+    z-index: 15;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.4rem 0.5rem 0.4rem 1rem;
+    border: 1px solid var(--glass-edge);
+    max-width: min(92vw, 34rem);
+    opacity: 0;
+    transition: opacity var(--dur) var(--ease), translate var(--dur) var(--ease);
+  }
+
+  .undo-bar.is-visible {
+    opacity: 1;
+  }
+
+  /*
+   * `display: flex` above beats the user-agent `[hidden] { display: none }`, so
+   * without this the dismissed bar keeps its place in the layout and stays
+   * focusable and announced — invisible at opacity 0, but still there.
+   */
+  .undo-bar[hidden] {
+    display: none;
+  }
+
+  @media (width < 720px) {
+    .undo-bar {
+      bottom: calc(var(--tap) + 1.5rem);
+    }
+  }
+
+  .undo-message {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.88rem;
+    color: var(--ink-dim);
+  }
+
+  .undo-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 36px;
+    padding: 0.35rem 0.75rem;
+    border-radius: var(--radius-sm);
+    background: rgb(134 224 214 / 0.14);
+    color: var(--ink);
+    font-size: 0.88rem;
+  }
+
+  .undo-button:hover {
+    background: rgb(134 224 214 / 0.24);
+  }
+
+  /* ---- banner ---- */
+
+  .banner {
+    padding: 0.6rem 1rem;
+    background: rgb(255 178 122 / 0.16);
+    border-bottom: 1px solid rgb(255 178 122 / 0.3);
+    color: var(--warn-ink);
+    font-size: 0.88rem;
+    text-align: center;
+  }
+}
+
+@layer utilities {
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      translate: 0 8px;
+    }
+    to {
+      opacity: 1;
+      translate: 0 0;
+    }
+  }
+
+  @keyframes breathe {
+    0%,
+    100% {
+      scale: 1;
+      opacity: 0.85;
+    }
+    50% {
+      scale: 1.04;
+      opacity: 1;
+    }
+  }
+
+  /*
+   * Reduced motion means none, not slower. The surface still reports pressure
+   * and heat through frequency, relief and palette (see the Phase 2 notes); it
+   * simply holds still, and so does everything here.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
   }
 }

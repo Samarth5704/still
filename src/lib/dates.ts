@@ -138,3 +138,24 @@ export function startOfWeek(iso: ISODate, weekStart: WeekStart): ISODate {
 export function endOfWeek(iso: ISODate, weekStart: WeekStart): ISODate {
   return addDays(startOfWeek(iso, weekStart), 6)
 }
+
+/**
+ * '14:05' -> '2:05 pm'. Returns null for anything that is not a valid 'HH:mm',
+ * so a caller can omit the label rather than print nonsense.
+ *
+ * Lives here, at the bottom of the stack, because both the quick-add preview
+ * and the task row show a time and they must not drift apart: a chip reading
+ * "09:00" while the row beside it reads "9 am" is the kind of small
+ * inconsistency that makes an interface feel unfinished.
+ */
+export function formatTimeOfDay(hhmm: string | null): string | null {
+  if (hhmm === null) return null
+  const match = /^(\d{2}):(\d{2})$/.exec(hhmm)
+  if (!match) return null
+  const h = Number(match[1])
+  const m = Number(match[2])
+  if (h > 23 || m > 59) return null
+  const suffix = h < 12 ? 'am' : 'pm'
+  const hour = h % 12 === 0 ? 12 : h % 12
+  return m === 0 ? `${hour} ${suffix}` : `${hour}:${String(m).padStart(2, '0')} ${suffix}`
+}
