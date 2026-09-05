@@ -78,7 +78,7 @@ const BUILT_IN: NavItem[] = [
   { view: { kind: 'today' }, title: 'Today', icon: 'sun', count: (c) => c.today, alert: (c) => c.overdue > 0 },
   { view: { kind: 'upcoming' }, title: 'Upcoming', icon: 'horizon', count: (c) => c.upcoming },
   { view: { kind: 'all' }, title: 'All', icon: 'layers', count: (c) => c.all },
-  { view: { kind: 'calendar' }, title: 'Calendar', icon: 'calendar', count: () => 0 },
+  { view: { kind: 'calendar', day: null }, title: 'Calendar', icon: 'calendar', count: () => 0 },
 ]
 
 export class Nav {

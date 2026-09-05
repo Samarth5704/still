@@ -63,6 +63,49 @@ describe('cascade layers', () => {
     }
   })
 
+  /*
+   * The calendar arrived as one long block appended to the stylesheet, and the
+   * obvious place to append it — just before `@layer utilities` — is *outside*
+   * every layer, where it silently outranks all of them. It looked right on
+   * screen and would have started overriding unrelated rules the first time one
+   * of its class names was reused.
+   */
+  it('leaves no rule outside a layer at all', () => {
+    // Walk the file at brace depth zero. A top-level `@layer name {` prelude
+    // belongs to its block; anything else at depth zero is a rule nobody
+    // layered.
+    let stray = ''
+    let prelude = ''
+    let depth = 0
+    for (const c of css) {
+      if (c === '{') {
+        if (depth === 0) {
+          if (!/@layer\s+[\w-]+\s*$/.test(prelude)) stray += prelude
+          prelude = ''
+        }
+        depth += 1
+      } else if (c === '}') {
+        depth -= 1
+      } else if (depth === 0) {
+        prelude += c
+      }
+    }
+
+    const remains = (stray + prelude)
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/@layer[^;{]*;/g, '')
+      .replace(/@import[^;]*;/g, '')
+      .trim()
+    expect(remains, `found rules outside every @layer: ${remains.slice(0, 160)}`).toBe('')
+  })
+
+  it('styles the calendar in the components layer', () => {
+    const components = layerBody('components')
+    for (const selector of ['.calendar', '.cal-grid', '.cal-cell', '.cal-agenda', '.cal-day']) {
+      expect(components, `${selector} belongs in @layer components`).toContain(selector)
+    }
+  })
+
   it('styles the nav in the components layer, mobile rules included', () => {
     const components = layerBody('components')
     expect(components).toContain('.app-nav')
@@ -88,6 +131,16 @@ describe('hidden elements stay hidden', () => {
     '.field-row',
     '.subtasks',
     '.parent-prompt',
+    // Phase 6. The calendar swaps one layout for the other and empties its day
+    // panel by toggling `hidden`. `.cal-grid` is deliberately absent: it is a
+    // `<table>` and sets no `display` of its own, so the user-agent rule still
+    // reaches it.
+    '.cal-agenda',
+    '.cal-day-list',
+    '.cal-entry-mark',
+    // The tick itself. The calendar hides it on an entry nothing can act on,
+    // and `.check` is `display: grid` everywhere.
+    '.check',
   ]
 
   it.each(hiddenByScript)('%s has a [hidden] rule that beats its own display', (selector) => {

@@ -540,6 +540,82 @@ Skip and a moved date are for.
 - Clicking a day filters the list rather than opening a modal.
 - Today is marked in a way that survives greyscale.
 
+### Settled during Phase 6 — read before Phase 7
+
+**The calendar reads rules, not tasks.** `lib/calendar.ts` builds one map of
+day → entries for exactly the window on screen, and both the grid and the
+agenda are shapes over that one answer, so they cannot disagree about what a
+Tuesday holds. Plain tasks come from their `due`; a repeating task comes from
+its rule and never from its `due`, or the occurrence it is currently sitting on
+would be drawn twice and the ones either side of it not at all. Every call is
+still a bounded window over the bounded generator — the per-rule cap is the
+window's own length, because a rule cannot put two occurrences on one day
+unless one was moved there.
+
+**A rule left behind by a split keeps its title through the shape of the
+split.** `splitSeries` ends the original the day before its successor starts,
+so an orphaned rule is matched to the task by following that chain forward
+until a rule a task points at is reached. Two rules starting on the same day
+are ambiguous and link to nothing: a mis-titled completion is worse than a
+missing one. Only the *finished* occurrences of an orphan are drawn — its
+pending dates are unreachable, and a checkbox that cannot do anything is worse
+than a blank square.
+
+**Focus and selection are different things, and both had to exist.** Arrow
+keys move focus without committing; Enter or Space selects, which filters the
+day list and writes the day into the URL. Selecting on every arrow key would
+push a history entry per keystroke and re-announce the panel seven times
+crossing a week, so each focus move announces the day it landed on instead.
+Focus is only ever reset from outside when the *selection* changes — comparing
+it against the focused day instead is how every arrow key gets snapped straight
+back, which looks exactly like a grid with no keyboard support at all.
+
+**The selected day is in the URL, but with `replaceState`.** A day is a filter,
+not a destination: Back should leave the calendar rather than walk through
+every day someone looked at. That also means no `hashchange`, and therefore no
+focus move to the view heading — which is what keeps the arrow keys inside the
+grid where the user put them. `sameView` ignores the day so the nav link stays
+lit; `sameHash` is the strict question, and routing is the only thing that asks
+it.
+
+**Only the current occurrence gets a checkbox.** `setDone` acts on the task,
+and a repeating task's `due` is the one occurrence it is sitting on — so a
+checkbox on next Monday's cell would tick *this* Monday's. Everything else on
+the grid carries a mark and a word instead: `completed`, `skipped`, or
+`scheduled`.
+
+**Today is marked by luminance, not hue**: the numeral is knocked out of a
+filled disc, the only disc on the grid, and `aria-current="date"` says the same
+thing to anyone not looking.
+
+**Below 520px the dot is the whole entry, so the statuses are shapes.** The
+cells drop their task names at that width, which means a strike-through on
+hidden text says nothing and the dot has to carry the state on its own. Filled
+disc is outstanding, open ring is done, flat dash is skipped — three
+silhouettes, because a fill or lightness difference is the colour-alone failure
+wearing different clothes, and it is also exactly what a low-priority task
+already looks like. The dot grows to 9px there, since a 1.5px ring inside a 6px
+disc leaves a 3px hole that is not a shape anybody can read. The same three
+states are in the cell's `aria-label`, where `dayLoadLabel` counts *done* and
+*skipped* separately rather than summing them as "finished": that string is all
+a screen reader gets from a dot, and a day waved away is not a day completed.
+
+**One fetch per render.** The grid, the agenda and the day panel all want the
+same days, so they are three shapes over one `CalendarWindow` rather than three
+calls to `entriesBetween` — which walks every rule in the state, and would make
+the one-day panel pay the full per-rule cost of the whole month. Paging a month
+therefore costs one more pass over the rules, not one per cell; measured at
+**1.8 ms** for a 56-day window over 300 tasks and 40 rules (395 entries), with
+the one-day fallback the day panel uses when it is showing a day off the month
+on screen at **0.43 ms**. `src/app/calendar.cost.test.ts` counts the calls, so
+the shape of that cost cannot regress silently even where the timing would be
+too flaky to assert.
+
+**Empty days keep their rows.** The agenda lists every day of the month
+including the ones with nothing on them, and each says so in words. An empty
+week is information, and collapsing it is how a quiet fortnight comes to look
+like a missing one.
+
 ---
 
 ## Phase 7 — wire it up, and the glass

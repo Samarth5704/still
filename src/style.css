@@ -1767,6 +1767,481 @@
       display: none;
     }
   }
+  /* ---- calendar ---------------------------------------------------------
+   *
+   * Two layouts over one component: a six-week grid and an agenda, with the
+   * selected day's list underneath both. The grid is a real `<table>` with
+   * `role="grid"` — the cells are the focusable controls, per the date-grid
+   * convention, so there is no button inside a gridcell fighting it for the
+   * keyboard.
+   */
+  .calendar {
+    display: grid;
+    gap: var(--gap);
+  }
+
+  @container list (width > 860px) {
+    .calendar {
+      grid-template-columns: minmax(0, 1fr) minmax(260px, 22rem);
+      align-items: start;
+    }
+
+    .cal-head {
+      grid-column: 1 / -1;
+    }
+  }
+
+  .cal-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .cal-nav {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .cal-title {
+    font-family: var(--font-display);
+    font-size: 1.15rem;
+    min-width: 9ch;
+    text-align: center;
+  }
+
+  .cal-today {
+    margin-left: 0.4rem;
+    padding: 0.3rem 0.7rem;
+    border: 1px solid var(--glass-edge);
+    border-radius: 999px;
+    color: var(--ink-dim);
+    font-size: 0.85rem;
+  }
+
+  .cal-today:hover {
+    color: var(--ink);
+    border-color: color-mix(in srgb, var(--c-foam) 45%, transparent);
+  }
+
+  .cal-modes {
+    display: flex;
+    border: 1px solid var(--glass-edge);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+
+  .cal-mode {
+    padding: 0.35rem 0.9rem;
+    font-size: 0.85rem;
+    color: var(--ink-dim);
+  }
+
+  /*
+   * The chosen layout is marked by weight and a filled ground, not by hue: a
+   * segmented control whose only state is a tint disappears in greyscale and
+   * for most colour-vision deficiencies.
+   */
+  .cal-mode.is-current {
+    background: rgb(134 224 214 / 0.16);
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  .cal-body {
+    padding: 0.5rem;
+    border: 1px solid var(--glass-edge);
+    min-width: 0;
+  }
+
+  .cal-grid {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+  }
+
+  /*
+   * Each of these sets `display`, which beats the user-agent
+   * `[hidden] { display: none }` no matter how specific that is. Toggling
+   * `hidden` on a node styled `display: flex` and having it stay on screen is
+   * a defect this stylesheet has already shipped once — see the undo bar — so
+   * every one gets its own opt-out, written singly so the guard in
+   * style.test.ts can find it.
+   */
+  .cal-grid[hidden] {
+    display: none;
+  }
+
+  .cal-agenda[hidden] {
+    display: none;
+  }
+
+  .cal-day-list[hidden] {
+    display: none;
+  }
+
+  .cal-day-load[hidden],
+  .cal-day-empty[hidden] {
+    display: none;
+  }
+
+  .check[hidden] {
+    display: none;
+  }
+
+  .cal-entry-mark[hidden] {
+    display: none;
+  }
+
+  .cal-weekday {
+    padding: 0.35rem 0.2rem;
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  .cal-cell {
+    height: 5.5rem;
+    vertical-align: top;
+    padding: 0.3rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+  }
+
+  .cal-cell:hover {
+    background: rgb(134 224 214 / 0.08);
+  }
+
+  .cal-cell.is-weekend {
+    background: rgb(6 16 30 / 0.25);
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme='dark']) .cal-cell.is-weekend {
+      background: rgb(12 56 76 / 0.05);
+    }
+  }
+
+  /* A borrowed day is dimmed, never hidden: a month has edges and they matter. */
+  .cal-cell.is-outside {
+    opacity: 0.45;
+  }
+
+  .cal-cell.is-selected {
+    border-color: var(--c-foam);
+    background: rgb(134 224 214 / 0.12);
+  }
+
+  .cal-cell.has-overdue {
+    box-shadow: inset 3px 0 0 var(--warn);
+  }
+
+  .cal-num {
+    display: inline-grid;
+    place-items: center;
+    min-width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 50%;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.85rem;
+    color: var(--ink-dim);
+  }
+
+  .cal-cell.is-outside .cal-num {
+    color: var(--ink-faint);
+  }
+
+  /*
+   * Today survives greyscale: the numeral is knocked out of a filled disc, so
+   * it reads as a luminance reversal rather than a tint, and it is the only
+   * disc on the grid.
+   */
+  .cal-cell.is-today .cal-num {
+    background: var(--ink);
+    color: var(--c-deep);
+    font-weight: 700;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme='dark']) .cal-cell.is-today .cal-num {
+      color: rgb(244 250 250);
+    }
+  }
+
+  .cal-cell-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    margin-top: 0.15rem;
+  }
+
+  .cal-pip {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-width: 0;
+    font-size: 0.72rem;
+    color: var(--ink-dim);
+  }
+
+  .cal-pip-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .cal-pip-dot {
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--c-light);
+  }
+
+  .cal-pip-dot[data-priority='high'],
+  .cal-pip[data-priority='high'] .cal-pip-dot {
+    background: var(--c-amber);
+  }
+
+  .cal-pip-dot[data-priority='urgent'],
+  .cal-pip[data-priority='urgent'] .cal-pip-dot {
+    background: var(--c-clay);
+  }
+
+  /*
+   * A finished occurrence is struck through as well as dimmed. Dimming alone
+   * is a contrast change, and a contrast change is what a low-priority task
+   * already looks like.
+   */
+  .cal-pip[data-status='completed'],
+  .cal-pip[data-status='skipped'],
+  .agenda-entry[data-status='completed'],
+  .agenda-entry[data-status='skipped'] {
+    color: var(--ink-faint);
+    text-decoration: line-through;
+  }
+
+  /*
+   * Three states, three silhouettes: a filled disc still to do, an open ring
+   * done, a flat dash waved away.
+   *
+   * Below 520px the cell drops its task names and the dot is the only thing
+   * left of an entry, so a strike-through on hidden text says nothing. Fill
+   * alone would not be enough either — "solid teal vs faint teal" is a
+   * lightness difference, which is the same failure as colour-alone wearing a
+   * different hat, and it is exactly what a low-priority task already looks
+   * like. Shape is the only channel here that survives greyscale, a 6px
+   * rendering and a dimmed cell at once.
+   */
+  .cal-pip[data-status='completed'] .cal-pip-dot,
+  .agenda-entry[data-status='completed'] .cal-pip-dot {
+    background: transparent;
+    box-shadow: inset 0 0 0 1.5px var(--ink-dim);
+  }
+
+  .cal-pip[data-status='skipped'] .cal-pip-dot,
+  .agenda-entry[data-status='skipped'] .cal-pip-dot {
+    width: 10px;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--ink-dim);
+  }
+
+  .cal-more {
+    font-size: 0.7rem;
+    color: var(--ink-faint);
+  }
+
+  /* ---- agenda ---- */
+
+  .cal-agenda {
+    display: flex;
+    flex-direction: column;
+    max-height: min(60svh, 34rem);
+    overflow-y: auto;
+  }
+
+  .agenda-row {
+    border-top: 1px solid var(--glass-edge);
+    padding: 0.15rem 0;
+  }
+
+  .agenda-row:first-child {
+    border-top: none;
+  }
+
+  /* An empty day keeps its row and its heading. An empty week is information. */
+  .agenda-row.is-empty .agenda-heading {
+    color: var(--ink-faint);
+  }
+
+  .agenda-day {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.5rem;
+    width: 100%;
+    min-height: 2.2rem;
+    padding: 0.3rem 0.45rem;
+    border-radius: var(--radius-sm);
+    text-align: left;
+  }
+
+  .agenda-day:hover {
+    background: rgb(134 224 214 / 0.08);
+  }
+
+  .agenda-row.is-selected .agenda-day {
+    background: rgb(134 224 214 / 0.14);
+    box-shadow: inset 0 0 0 1px var(--c-foam);
+  }
+
+  .agenda-row.is-today .agenda-heading {
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 0.25em;
+  }
+
+  .agenda-row.has-overdue .agenda-load {
+    color: var(--warn-ink);
+  }
+
+  .agenda-heading {
+    font-size: 0.9rem;
+  }
+
+  .agenda-load {
+    font-size: 0.78rem;
+    color: var(--ink-faint);
+  }
+
+  .agenda-entries {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    padding: 0 0.45rem 0.35rem 1.1rem;
+  }
+
+  .agenda-entry {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.82rem;
+    color: var(--ink-dim);
+  }
+
+  .agenda-status {
+    color: var(--ink-faint);
+  }
+
+  /* ---- the selected day's list ---- */
+
+  .cal-day {
+    padding: 0.9rem;
+    border: 1px solid var(--glass-edge);
+  }
+
+  .cal-day-title {
+    font-family: var(--font-display);
+    font-size: 1rem;
+  }
+
+  .cal-day-load,
+  .cal-day-empty {
+    margin-top: 0.15rem;
+    font-size: 0.82rem;
+    color: var(--ink-faint);
+  }
+
+  .cal-day-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-top: 0.7rem;
+  }
+
+  .cal-entry {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .cal-entry-lead {
+    display: grid;
+    place-items: center;
+  }
+
+  /*
+   * A forecast occurrence and a finished one are not tickable, and the mark
+   * that replaces the checkbox says which it is — an icon plus a word in the
+   * chips, never the icon alone.
+   */
+  .cal-entry-mark {
+    display: grid;
+    place-items: center;
+    width: var(--tap);
+    height: var(--tap);
+    margin: -0.15rem 0 0 -0.35rem;
+    color: var(--ink-faint);
+  }
+
+  .cal-entry[data-status='completed'] .task-title,
+  .cal-entry[data-status='skipped'] .task-title {
+    color: var(--ink-faint);
+    text-decoration: line-through;
+  }
+
+  .chip-status {
+    color: var(--ink-faint);
+  }
+
+  /*
+   * Below this the grid's cells cannot hold a task name at a readable size, so
+   * the cell keeps its dots and its numeral and the day's list below carries
+   * the words. The agenda is the better layout at this width and is one tap
+   * away.
+   */
+  @container list (width < 520px) {
+    .cal-cell {
+      height: 3.6rem;
+    }
+
+    .cal-pip-title,
+    .cal-more {
+      display: none;
+    }
+
+    .cal-cell-body {
+      flex-direction: row;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /*
+     * The dot is now the entry, so it grows: a 1.5px ring inside a 6px disc
+     * leaves a 3px hole, which is not a shape anybody can read. At 9px the
+     * ring, the disc and the dash are three plainly different things.
+     */
+    .cal-pip-dot {
+      width: 9px;
+      height: 9px;
+    }
+
+    .cal-pip[data-status='completed'] .cal-pip-dot {
+      box-shadow: inset 0 0 0 2px var(--ink-dim);
+    }
+
+    .cal-pip[data-status='skipped'] .cal-pip-dot {
+      width: 11px;
+      height: 3px;
+    }
+  }
+
 }
 
 @layer utilities {

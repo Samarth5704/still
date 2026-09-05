@@ -5,11 +5,14 @@
  * the URL and the DOM; this module owns the answer to "what belongs on screen".
  */
 import {
+  MONTH_NAMES,
+  WEEKDAY_NAMES,
   addDays,
   compareDates,
   daysBetween,
   epochDay,
   formatTimeOfDay,
+  isISODate,
   parseISODate,
   weekday,
 } from './dates.ts'
@@ -19,7 +22,13 @@ export type View =
   | { kind: 'today' }
   | { kind: 'upcoming' }
   | { kind: 'all' }
-  | { kind: 'calendar' }
+  /**
+   * `day` is the day the grid has filtered its list to, and it lives in the
+   * view — and therefore in the URL — rather than inside the calendar
+   * component, so a day someone is looking at can be linked and survives a
+   * reload. `null` means the calendar picks today.
+   */
+  | { kind: 'calendar'; day: ISODate | null }
   | { kind: 'project'; id: string }
   | { kind: 'tag'; id: string }
 
@@ -33,13 +42,6 @@ export type TaskGroup = {
 }
 
 const PRIORITY_RANK: Record<Priority, number> = { urgent: 0, high: 1, medium: 2, low: 3, none: 4 }
-
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-]
-
-const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 /** Open, top-level tasks. Subtasks belong to their parent's row, never to a list. */
 function isListable(t: Task): boolean {
@@ -293,7 +295,10 @@ export function parseHash(hash: string): View {
     case 'all':
       return { kind: 'all' }
     case 'calendar':
-      return { kind: 'calendar' }
+      // `#/calendar/2026-09-06` is a calendar with that day's list showing. A
+      // malformed day is dropped rather than rejected: the calendar is still
+      // the view the user asked for.
+      return { kind: 'calendar', day: isISODate(rest) ? rest : null }
     case 'project':
       return rest ? { kind: 'project', id: decodeURIComponent(rest) } : DEFAULT_VIEW
     case 'tag':
@@ -309,16 +314,31 @@ export function formatHash(view: View): string {
       return `#/project/${encodeURIComponent(view.id)}`
     case 'tag':
       return `#/tag/${encodeURIComponent(view.id)}`
+    case 'calendar':
+      return view.day === null ? '#/calendar' : `#/calendar/${view.day}`
     default:
       return `#/${view.kind}`
   }
 }
 
+/**
+ * Whether two views are the same *place*.
+ *
+ * The calendar's selected day is deliberately not compared: the nav link
+ * highlights "Calendar" whichever day is showing, and the calendar keeps its
+ * own scroll and focus when the day changes underneath it. `sameHash` is the
+ * stricter question, and it is the one routing asks.
+ */
 export function sameView(a: View, b: View): boolean {
   if (a.kind !== b.kind) return false
   if (a.kind === 'project' && b.kind === 'project') return a.id === b.id
   if (a.kind === 'tag' && b.kind === 'tag') return a.id === b.id
   return true
+}
+
+/** Exact identity, selected day included. */
+export function sameHash(a: View, b: View): boolean {
+  return formatHash(a) === formatHash(b)
 }
 
 /** The heading shown above the list, given the view and the state it names. */

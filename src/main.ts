@@ -12,6 +12,7 @@
 import './style.css'
 
 import { Announcer } from './app/announce.ts'
+import { Calendar } from './app/calendar.ts'
 import { Header, Nav } from './app/chrome.ts'
 import { Manage } from './app/manage.ts'
 import { QuickAdd } from './app/quickadd.ts'
@@ -22,9 +23,9 @@ import { UndoBar } from './app/undo.ts'
 import { emptyKindFor, renderEmpty } from './app/empty.ts'
 import { el, query, setText } from './app/dom.ts'
 import { formatLongDate } from './lib/dates.ts'
-import { groupsForView, parseHash, viewCounts, viewTitle } from './lib/views.ts'
+import { formatHash, groupsForView, parseHash, viewCounts, viewTitle } from './lib/views.ts'
 import type { View } from './lib/views.ts'
-import type { ISODate, Task } from './lib/types.ts'
+import type { ISODate, State, Task, WeekStart } from './lib/types.ts'
 
 const store = new Store()
 let view: View = parseHash(location.hash)
@@ -68,6 +69,8 @@ const quickAdd = new QuickAdd(
   { today: store.getToday(), weekStart: store.getState().settings.weekStartsOn },
 )
 
+type Source = 'list' | 'calendar'
+
 const taskList = new TaskList({
   onToggle: (task, origin) => complete(task, origin),
   onOpen: (task) => detail.open(task.id),
@@ -75,6 +78,29 @@ const taskList = new TaskList({
     store.move(task.id, direction)
     announcer.say(`Moved ${task.title} ${direction === -1 ? 'up' : 'down'}`)
   },
+})
+
+/**
+ * The calendar.
+ *
+ * Its selected day lives in the URL, but a day is a filter rather than a
+ * destination, so it is written with `replaceState`: Back should leave the
+ * calendar, not walk back through every day someone looked at. That also means
+ * no `hashchange`, so no focus move — which is what keeps the arrow keys inside
+ * the grid where the user put them.
+ */
+const calendar = new Calendar({
+  onSelectDay: (day) => {
+    view = { kind: 'calendar', day }
+    history.replaceState(null, '', formatHash(view))
+    render()
+  },
+  onOpenTask: (id) => detail.open(id),
+  onToggle: (id, origin) => {
+    const task = store.getState().tasks.find((t) => t.id === id)
+    if (task) complete(task, origin, 'calendar')
+  },
+  announce: (message) => announcer.say(message),
 })
 
 /**
@@ -87,7 +113,7 @@ const taskList = new TaskList({
  * animating it out and then putting it back would be a lie about what just
  * happened. The undo message says where it went instead.
  */
-function complete(task: Task, origin: { x: number; y: number }): void {
+function complete(task: Task, origin: { x: number; y: number }, source: Source = 'list'): void {
   if (task.done) return
 
   // Phase 7 turns this into a ripple from the checkbox. Firing it here keeps
@@ -110,6 +136,22 @@ function complete(task: Task, origin: { x: number; y: number }): void {
   }
   const onExpire = (): void => {
     if (snapshot) store.expireUndo(snapshot)
+  }
+
+  if (source !== 'list') {
+    // The calendar has no row to animate out and no next row to fall onto: the
+    // entry either changes status in place or moves to another day, and the
+    // component has already handed focus on. Everything else — the commit, the
+    // ripple, the undo window — is identical, which is the point of routing
+    // both through here.
+    const next = advancedTo === null ? null : formatLongDate(advancedTo, store.getToday())
+    announcer.say(next ? `Completed ${task.title}. Next on ${next}.` : `Completed ${task.title}`)
+    undoBar.show(
+      next ? `Completed "${task.title}" — next on ${next}` : `Completed "${task.title}"`,
+      undoAction,
+      onExpire,
+    )
+    return
   }
 
   if (advancedTo !== null) {
@@ -144,6 +186,23 @@ function render(): void {
   nav.render(state, viewCounts(state, today), view)
   setText(heading, viewTitle(view, state))
 
+  if (view.kind === 'calendar') {
+    if (listHost.firstElementChild !== calendar.root) listHost.replaceChildren(calendar.root)
+    calendar.render(state, today, weekStart, view.day)
+  } else {
+    renderList(state, today, weekStart)
+  }
+
+  // The dialogs read from the same store as everything else, so a rename in
+  // one is visible in the other before the pointer has moved.
+  detail.sync(state, today)
+  manage.sync(state)
+
+  announcer.summarise(Header.summary(pressure))
+  quickAdd.setContext({ today, weekStart })
+}
+
+function renderList(state: State, today: ISODate, weekStart: WeekStart): void {
   const groups = groupsForView(state, view, today, weekStart)
 
   if (groups.length === 0) {
@@ -160,14 +219,6 @@ function render(): void {
     if (listHost.firstElementChild !== taskList.root) listHost.replaceChildren(taskList.root)
     taskList.render(groups, state, today, view)
   }
-
-  // The dialogs read from the same store as everything else, so a rename in
-  // one is visible in the other before the pointer has moved.
-  detail.sync(state, today)
-  manage.sync(state)
-
-  announcer.summarise(Header.summary(pressure))
-  quickAdd.setContext({ today, weekStart })
 }
 
 // ---- layout ---------------------------------------------------------------

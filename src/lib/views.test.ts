@@ -11,6 +11,7 @@ import {
   nextOrder,
   parseHash,
   reorder,
+  sameHash,
   sameView,
   tasksForView,
   timeLabel,
@@ -366,7 +367,8 @@ describe('hash round-trip', () => {
     { kind: 'today' },
     { kind: 'upcoming' },
     { kind: 'all' },
-    { kind: 'calendar' },
+    { kind: 'calendar', day: null },
+    { kind: 'calendar', day: '2026-09-06' },
     { kind: 'project', id: 'p1' },
     { kind: 'tag', id: 't1' },
   ]
@@ -391,10 +393,29 @@ describe('hash round-trip', () => {
     expect(parseHash(formatHash(view))).toEqual(view)
   })
 
+  it('drops a calendar day that is not a real date, keeping the calendar', () => {
+    expect(parseHash('#/calendar/2026-13-40')).toEqual({ kind: 'calendar', day: null })
+    expect(parseHash('#/calendar/tomorrow')).toEqual({ kind: 'calendar', day: null })
+  })
+
   it('compares views by identity, not by reference', () => {
     expect(sameView({ kind: 'today' }, { kind: 'today' })).toBe(true)
     expect(sameView({ kind: 'project', id: 'a' }, { kind: 'project', id: 'b' })).toBe(false)
     expect(sameView({ kind: 'project', id: 'a' }, { kind: 'tag', id: 'a' })).toBe(false)
+  })
+
+  /*
+   * The nav link stays lit whichever day the calendar has filtered to, so
+   * `sameView` ignores the day and routing asks `sameHash` instead. Two
+   * different questions, and conflating them either unlights the nav on every
+   * day click or reloads the whole view on one.
+   */
+  it('separates "the same place" from "the same URL" for the calendar', () => {
+    const a: View = { kind: 'calendar', day: null }
+    const b: View = { kind: 'calendar', day: '2026-09-06' }
+    expect(sameView(a, b)).toBe(true)
+    expect(sameHash(a, b)).toBe(false)
+    expect(sameHash(b, { kind: 'calendar', day: '2026-09-06' })).toBe(true)
   })
 })
 

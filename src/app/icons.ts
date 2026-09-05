@@ -24,6 +24,9 @@ type IconName =
   | 'undo'
   | 'chevron-up'
   | 'chevron-down'
+  | 'chevron-left'
+  | 'chevron-right'
+  | 'skip'
   | 'repeat'
   | 'clock'
   | 'alert'
@@ -46,6 +49,9 @@ const PATHS: Record<IconName, string[]> = {
   undo: ['M4 9h11a5 5 0 0 1 0 10h-4', 'M8 5 4 9l4 4'],
   'chevron-up': ['M6 14.5 12 8.5l6 6'],
   'chevron-down': ['M6 9.5 12 15.5l6-6'],
+  'chevron-left': ['M14.5 6 8.5 12l6 6'],
+  'chevron-right': ['M9.5 6l6 6-6 6'],
+  skip: ['M7 6.5 14 12l-7 5.5Z', 'M17 6v12'],
   repeat: ['M4 10a6 6 0 0 1 6-6h10', 'M17 1l3 3-3 3', 'M20 14a6 6 0 0 1-6 6H4', 'M7 23l-3-3 3-3'],
   clock: ['M12 4.5a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15Z', 'M12 8v4.5l3 2'],
   alert: ['M12 4 2.5 20.5h19L12 4Z', 'M12 10v4.5', 'M12 17.5h.01'],

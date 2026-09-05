@@ -62,6 +62,51 @@ The full spec is in docs/still-prompt.md. Read it before starting any phase.
 - The scope question is asked once per visit to the detail dialog, on the first
   edit, and the answer is then shown with a way to change it.
 
+### Calendar and agenda (lib/calendar.ts, app/calendar.ts)
+- The calendar reads RULES, not tasks. entriesBetween builds one day -> entries
+  map for exactly the window on screen and both the grid and the agenda are
+  shapes over it. A repeating task is drawn from its rule and NEVER from its
+  `due`, or the current occurrence appears twice and its neighbours not at all.
+  The per-rule cap is the window's own length; MAX_WINDOW_DAYS throws rather
+  than walking every rule for a year.
+- A rule no task points at is a split's leftover. It is attributed by following
+  the shape the split made — it ends the day before its successor starts — and
+  only its FINISHED occurrences are drawn. Two rules starting on the same day
+  link to nothing: a mis-titled completion is worse than a missing one.
+- FOCUS AND SELECTION ARE DIFFERENT. Arrows move focus and announce the day;
+  Enter or Space selects. Focus is reset from outside only when the SELECTION
+  changes — never by comparing it against the focused day, which snaps every
+  arrow key straight back and looks like a grid with no keyboard support.
+  The month on show always contains the focused day, so exactly one cell is in
+  the tab order.
+- Both layouts mark their focused day, so any focus restore MUST be scoped to
+  the layout on show. `.focus()` on a hidden node silently does nothing.
+- The selected day is in the URL via replaceState: a day is a filter, not a
+  destination, and no hashchange means no focus jump to the view heading.
+  sameView ignores it (the nav link stays lit); sameHash is the strict question.
+- Only the occurrence the task is sitting on gets a checkbox, because setDone
+  acts on the task. Everything else carries a mark AND a word.
+- ONE entriesBetween call per render. The grid, the agenda and the day panel
+  are three shapes over one CalendarWindow (calendarWindow / monthGridIn /
+  agendaIn / dayIn); the fetch-and-shape wrappers monthGrid, agendaDays and
+  dayDetail exist for the pure tests and for the off-window fallback. Three
+  separate fetches triple the per-rule walk and look identical on screen;
+  fetching inside the cell loop multiplies it by 42. src/app/calendar.cost.test.ts
+  counts occurrencesBetween calls and holds this.
+- Today is marked by luminance (a filled disc) plus aria-current, never by hue.
+  Below 520px the cells drop their task names and the dot is the ENTIRE entry,
+  so the three statuses are three SHAPES: filled disc outstanding, open ring
+  done, flat dash skipped. Fill or lightness alone is the colour-alone failure
+  in different clothing — it is also what a low-priority task already looks
+  like. The dot grows to 9px there so a ring is readable as a ring.
+- The cell's aria-label is the only thing a screen reader gets from a dot, so
+  dayLoadLabel counts done and skipped SEPARATELY — never as one "finished".
+- Empty days keep their rows in the agenda. An empty week is information.
+- Every rule in style.css must sit inside a @layer. Appending a block before
+  @layer utilities puts it OUTSIDE every layer, where it silently outranks all
+  of them; style.test.ts guards this, along with a [hidden] opt-out for every
+  selector that sets `display` and is hidden from script.
+
 ### Quick-add parsing (lib/parse.ts)
 - Token KINDS claim characters in a fixed order (KIND_ORDER): recurrence, then
   time, then date, then priority, project, tag. That is what makes

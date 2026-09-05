@@ -160,10 +160,21 @@ export function formatTimeOfDay(hhmm: string | null): string | null {
   return m === 0 ? `${hour} ${suffix}` : `${hour}:${String(m).padStart(2, '0')} ${suffix}`
 }
 
-const MONTH_NAMES = [
+/**
+ * Month and weekday names, exported because four modules name a date in prose —
+ * the list's headings, the recurrence summary, the calendar grid and the
+ * agenda — and two copies of this array is exactly how they start disagreeing
+ * about whether September is abbreviated.
+ */
+export const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
-]
+] as const
+
+/** Indexed by `weekday()`: 0 = Sunday. */
+export const WEEKDAY_NAMES = [
+  'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',
+] as const
 
 /**
  * '2026-12-15' -> '15 December 2026', or '15 December' when it falls in
