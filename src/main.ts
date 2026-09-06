@@ -16,6 +16,7 @@ import { Calendar } from './app/calendar.ts'
 import { Header, Nav } from './app/chrome.ts'
 import { Manage } from './app/manage.ts'
 import { QuickAdd } from './app/quickadd.ts'
+import { Settings } from './app/settings.ts'
 import { AppSurface } from './app/surface.ts'
 import { Store } from './app/store.ts'
 import { TaskDetail } from './app/detail.ts'
@@ -36,9 +37,61 @@ const announcer = new Announcer(document.body)
 const surface = new AppSurface(document.body)
 
 const manage = new Manage(store, { announce: (message) => announcer.say(message) })
-const header = new Header(() => manage.open())
+
+/**
+ * What the surface actually ended up doing, in one sentence.
+ *
+ * The preference is a request; WebGL2 and — under `auto` — the OS both get a
+ * say after it, and a control that shows the request without the outcome is how
+ * someone concludes the app ignored them. The dialog asks; the surface answers.
+ */
+function effectsStatus(): string {
+  const setting = store.getState().settings.effects
+  const asked =
+    setting === 'auto'
+      ? `Your system asks for ${surface.prefersReducedMotion ? 'reduced motion' : 'full motion'}. `
+      : ''
+
+  if (!surface.hasShader) {
+    return `${asked}WebGL2 is not available here, so the background is the plain gradient.`
+  }
+  switch (surface.currentMode) {
+    case 'shader':
+      return `${asked}The surface is flowing.`
+    case 'still':
+      return `${asked}The surface is holding still. It still shows how much is on your plate and how much of it is late.`
+    default:
+      return `${asked}Nothing is running behind the app.`
+  }
+}
+
+const settings = new Settings(store, {
+  announce: (message) => announcer.say(message),
+  effectsStatus,
+})
+
+const header = new Header(
+  () => manage.open(),
+  () => settings.open(),
+)
 const nav = new Nav()
 const undoBar = new UndoBar()
+
+/**
+ * The theme, applied.
+ *
+ * `system` removes the attribute and lets `prefers-color-scheme` decide; an
+ * explicit choice sets it and outranks the OS in both directions. Written only
+ * when it changes: this is an attribute on `:root`, so every write invalidates
+ * the whole document's style.
+ */
+let appliedTheme = ''
+function applyTheme(theme: State['settings']['theme']): void {
+  if (theme === appliedTheme) return
+  appliedTheme = theme
+  if (theme === 'system') delete document.documentElement.dataset.theme
+  else document.documentElement.dataset.theme = theme
+}
 
 /** A completion anywhere reports where on screen it happened; the surface rides on it. */
 function ripple(origin: { x: number; y: number }): void {
@@ -200,10 +253,13 @@ function render(): void {
     renderList(state, today, weekStart)
   }
 
+  applyTheme(state.settings.theme)
+
   // The dialogs read from the same store as everything else, so a rename in
   // one is visible in the other before the pointer has moved.
   detail.sync(state, today)
   manage.sync(state)
+  settings.sync(state)
 
   announcer.summarise(Header.summary(pressure))
   quickAdd.setContext({ today, weekStart })
@@ -242,6 +298,7 @@ root.append(
   undoBar.root,
   detail.root,
   manage.root,
+  settings.root,
 )
 
 if (store.readOnly) {
@@ -278,7 +335,7 @@ window.addEventListener('keydown', (event) => {
 
   // A modal owns the keyboard while it is up. Quick add is behind it and
   // unreachable, so stealing the keystroke would only eat it.
-  if (detail.isOpen || manage.isOpen) return
+  if (detail.isOpen || manage.isOpen || settings.isOpen) return
 
   if (event.key === '/' && !typing && !event.metaKey && !event.ctrlKey) {
     event.preventDefault()
@@ -309,3 +366,17 @@ window.addEventListener('pagehide', () => store.flush())
 
 store.subscribe(() => render())
 store.start()
+
+/*
+ * The performance harness's only foothold, and it exists only in `vite dev`.
+ *
+ * Phase 8 asks for measured numbers rather than assurances, and the numbers
+ * that matter — GPU milliseconds per frame, the cost of a render pass with 200
+ * tasks on the list — live inside module scope where a devtools console cannot
+ * reach them. Rather than exporting them for real, or shipping a debug panel,
+ * dev builds hang the store and the surface off `globalThis` and the production
+ * bundle does not contain this block at all. See docs/performance.md.
+ */
+if (import.meta.env.DEV) {
+  Object.assign(globalThis, { still: { store, surface, render } })
+}

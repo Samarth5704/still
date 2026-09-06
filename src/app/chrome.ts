@@ -17,7 +17,7 @@ export class Header {
   private readonly label: HTMLElement
   private readonly detail: HTMLElement
 
-  constructor(onManage: () => void) {
+  constructor(onManage: () => void, onSettings: () => void) {
     this.label = el('span', { class: 'pressure-label' })
     this.detail = el('span', { class: 'pressure-detail' })
 
@@ -32,6 +32,16 @@ export class Header {
     )
     manage.addEventListener('click', onManage)
 
+    // Preferences sit beside it for the same reason. The effects control in
+    // particular has to be reachable on the device most likely to want it
+    // turned down.
+    const settings = el(
+      'button',
+      { class: 'icon-button header-settings', type: 'button', 'aria-label': 'Preferences' },
+      [icon('sliders')],
+    )
+    settings.addEventListener('click', onSettings)
+
     this.root = el('header', { class: 'app-header glass' }, [
       // Named for what the link does, not just what it says: "still" alone is
       // an odd thing to hear announced as a destination.
@@ -39,6 +49,7 @@ export class Header {
       el('div', { class: 'header-end' }, [
         el('div', { class: 'pressure' }, [this.label, this.detail]),
         manage,
+        settings,
       ]),
     ])
   }

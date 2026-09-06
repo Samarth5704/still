@@ -86,12 +86,43 @@
     --c-moss: rgb(132 190 118);
     --c-clay: rgb(224 132 108);
 
+    /*
+     * The ink ladder, verified rather than eyeballed.
+     *
+     * `--ink-faint` was 122 146 158 through Phase 7 and reads 3.70:1 against
+     * the brightest crest the surface can throw at a busy, late list — under
+     * the scrim, which is the whole point of the scrim. `scripts/contrast.ts`
+     * sweeps the range and picks the floor; these three are the values that
+     * clear 4.5:1 at every point of it, and the script fails the build if a
+     * later edit walks any of them back.
+     */
     --ink: rgb(232 240 244);
     --ink-dim: rgb(168 188 198);
-    --ink-faint: rgb(122 146 158);
+    --ink-faint: rgb(143 163 174);
 
     --warn: rgb(255 178 122);
     --warn-ink: rgb(255 214 184);
+    /* The read-only banner's tint, composited *over* the scrim rather than replacing it. */
+    --warn-wash: rgb(255 178 122 / 0.16);
+
+    /*
+     * The three places the light theme differs beyond ink and glass. As tokens
+     * rather than as their own `prefers-color-scheme` blocks, so the theme
+     * lives in exactly one place and an explicit choice can reach all of it.
+     */
+    --field-bg: rgb(6 16 30 / 0.35);
+    --weekend-bg: rgb(6 16 30 / 0.25);
+    --today-ink: var(--c-deep);
+
+    /*
+     * The ground *under* the surface, painted from the same palette. The canvas
+     * covers it once the module boots, so what it actually does is hold the
+     * first paint.
+     */
+    --ground:
+      radial-gradient(120% 90% at 15% 0%, rgb(12 56 76 / 0.9), transparent 60%),
+      radial-gradient(100% 80% at 85% 100%, rgb(28 112 124 / 0.35), transparent 55%),
+      var(--c-deep);
 
     /*
      * Glass. A real backdrop-filter over real DOM — never a canvas, never a
@@ -133,19 +164,58 @@
   /*
    * Light theme. The surface behind it is the same shader, seated lighter; the
    * chrome inverts so text keeps its contrast against a paler backdrop.
+   *
+   * Written twice on purpose, and it is the same three-way shape as `effects`:
+   * the media query is what `system` means, and `[data-theme='light']` is what
+   * an explicit choice means — a choice has to outrank the OS in both
+   * directions or it is not a preference, it is a hint. CSS has no way to say
+   * "either of these" across a media boundary, so the block is duplicated and
+   * `style.test.ts` asserts the two declare exactly the same tokens with
+   * exactly the same values. Everything the theme changes is a token, so this
+   * is the only place that duplication exists.
+   *
+   * `--ink-faint` and `--warn` are the values `scripts/contrast.ts` says clear
+   * 4.5:1 against the darkest trough the surface can reach; the Phase 7 values
+   * (96 122 134 and 176 74 20) read 2.86:1 and 3.45:1 there.
    */
   @media (prefers-color-scheme: light) {
     :root:not([data-theme='dark']) {
       --ink: rgb(14 32 42);
-      --ink-dim: rgb(58 84 96);
-      --ink-faint: rgb(96 122 134);
+      --ink-dim: rgb(38 62 74);
+      --ink-faint: rgb(58 82 93);
       --glass-bg: rgb(244 250 250 / var(--scrim));
       --glass-edge: rgb(12 56 76 / 0.12);
       --glass-shadow: 0 16px 40px -24px var(--glass-tint);
-      --warn: rgb(176 74 20);
+      --warn: rgb(144 61 16);
       --warn-ink: rgb(132 52 12);
+      --field-bg: rgb(255 255 255 / 0.55);
+      --weekend-bg: rgb(12 56 76 / 0.05);
+      --today-ink: rgb(244 250 250);
+      --ground:
+        radial-gradient(120% 90% at 15% 0%, rgb(134 224 214 / 0.55), transparent 60%),
+        radial-gradient(100% 80% at 85% 100%, rgb(28 112 124 / 0.18), transparent 55%),
+        rgb(236 244 246);
       color-scheme: light;
     }
+  }
+
+  :root[data-theme='light'] {
+    --ink: rgb(14 32 42);
+    --ink-dim: rgb(38 62 74);
+    --ink-faint: rgb(58 82 93);
+    --glass-bg: rgb(244 250 250 / var(--scrim));
+    --glass-edge: rgb(12 56 76 / 0.12);
+    --glass-shadow: 0 16px 40px -24px var(--glass-tint);
+    --warn: rgb(144 61 16);
+    --warn-ink: rgb(132 52 12);
+    --field-bg: rgb(255 255 255 / 0.55);
+    --weekend-bg: rgb(12 56 76 / 0.05);
+    --today-ink: rgb(244 250 250);
+    --ground:
+      radial-gradient(120% 90% at 15% 0%, rgb(134 224 214 / 0.55), transparent 60%),
+      radial-gradient(100% 80% at 85% 100%, rgb(28 112 124 / 0.18), transparent 55%),
+      rgb(236 244 246);
+    color-scheme: light;
   }
 }
 
@@ -154,26 +224,14 @@
     font-family: var(--font);
     color: var(--ink);
     /*
-     * The ground *under* the surface, painted from the same palette. The
-     * canvas covers it once the module boots, so what this actually does is
-     * hold the first paint: without it the page flashes white between the HTML
-     * arriving and the first frame, which is the one moment the whole premise
-     * of the app is on screen and wrong.
+     * The ground *under* the surface. The canvas covers it once the module
+     * boots, so what this actually does is hold the first paint: without it the
+     * page flashes white between the HTML arriving and the first frame, which
+     * is the one moment the whole premise of the app is on screen and wrong.
+     * The theme picks the gradient; see `--ground` in the tokens layer.
      */
-    background:
-      radial-gradient(120% 90% at 15% 0%, rgb(12 56 76 / 0.9), transparent 60%),
-      radial-gradient(100% 80% at 85% 100%, rgb(28 112 124 / 0.35), transparent 55%),
-      var(--c-deep);
+    background: var(--ground);
     background-attachment: fixed;
-  }
-
-  @media (prefers-color-scheme: light) {
-    body:not([data-theme='dark']) {
-      background:
-        radial-gradient(120% 90% at 15% 0%, rgb(134 224 214 / 0.55), transparent 60%),
-        radial-gradient(100% 80% at 85% 100%, rgb(28 112 124 / 0.18), transparent 55%),
-        rgb(236 244 246);
-    }
   }
 
   :focus-visible {
@@ -975,7 +1033,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    min-height: 36px;
+    min-height: var(--tap);
     padding: 0.35rem 0.75rem;
     border-radius: var(--radius-sm);
     background: rgb(134 224 214 / 0.14);
@@ -997,7 +1055,7 @@
      * one the user reads when their data will not be saved.
      */
     background:
-      linear-gradient(rgb(255 178 122 / 0.16), rgb(255 178 122 / 0.16)),
+      linear-gradient(var(--warn-wash), var(--warn-wash)),
       var(--glass-bg);
     backdrop-filter: blur(var(--blur)) saturate(1.4);
     border-bottom: 1px solid rgb(255 178 122 / 0.3);
@@ -1092,6 +1150,7 @@
    */
   .detail,
   .manage,
+  .settings,
   .ask,
   .repeat-editor {
     width: min(38rem, calc(100vw - 2rem));
@@ -1116,6 +1175,7 @@
 
   .detail:not([open]),
   .manage:not([open]),
+  .settings:not([open]),
   .ask:not([open]),
   .repeat-editor:not([open]) {
     display: none;
@@ -1123,10 +1183,82 @@
 
   .detail::backdrop,
   .manage::backdrop,
+  .settings::backdrop,
   .ask::backdrop,
   .repeat-editor::backdrop {
     background: rgb(6 16 30 / 0.5);
     backdrop-filter: blur(3px);
+  }
+
+  .settings {
+    width: min(30rem, calc(100vw - 2rem));
+  }
+
+  /*
+   * A preference group. `<fieldset>` carries its own user-agent border and
+   * padding; the legend is doing the naming, so the box is not needed.
+   */
+  .settings-group {
+    border: none;
+    padding: 0;
+  }
+
+  .settings-group + .settings-group {
+    margin-top: 1.25rem;
+  }
+
+  .choice-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-top: 0.5rem;
+  }
+
+  /*
+   * The whole row is the label, so the target is the option rather than the
+   * 16px circle beside it — which is what gets this past 44px without drawing
+   * anything that looks like a button.
+   */
+  .choice {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    min-height: var(--tap);
+    padding: 0.35rem 0.6rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+
+  .choice:hover {
+    background: var(--field-bg);
+  }
+
+  /* The ring belongs on the row, not on the 16px circle inside it. */
+  .choice:has(:focus-visible) {
+    outline: 2px solid var(--c-foam);
+    outline-offset: 2px;
+  }
+
+  .choice input {
+    flex: none;
+    width: 1.05rem;
+    height: 1.05rem;
+    accent-color: var(--c-foam);
+  }
+
+  .choice-body {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .choice-hint {
+    color: var(--ink-faint);
+    font-size: 0.82rem;
+  }
+
+  .settings-status {
+    margin-top: 0.6rem;
   }
 
   .detail-head {
@@ -1225,27 +1357,19 @@
   .subtask-title,
   .colour-select {
     width: 100%;
-    min-height: 2.5rem;
+    /*
+     * The tap floor, not 2.5rem. Phase 8 measured every control in the app at
+     * 320px: these were the ones that came back at 40px, which is comfortably
+     * over the WCAG minimum and four pixels under the one this project set
+     * itself. A text field is the control people miss and then mis-tap into.
+     */
+    min-height: var(--tap);
     padding: 0.45rem 0.6rem;
-    background: rgb(6 16 30 / 0.35);
+    background: var(--field-bg);
     border: 1px solid var(--glass-edge);
     border-radius: var(--radius-sm);
     color: var(--ink);
     font-size: 0.92rem;
-  }
-
-  @media (prefers-color-scheme: light) {
-    :root:not([data-theme='dark']) .detail-notes,
-    :root:not([data-theme='dark']) .detail-date,
-    :root:not([data-theme='dark']) .detail-time,
-    :root:not([data-theme='dark']) .detail-select,
-    :root:not([data-theme='dark']) .detail-inline-input,
-    :root:not([data-theme='dark']) .manage-name,
-    :root:not([data-theme='dark']) .subtask-title,
-    :root:not([data-theme='dark']) .repeat-number,
-    :root:not([data-theme='dark']) .colour-select {
-      background: rgb(255 255 255 / 0.55);
-    }
   }
 
   .detail-notes {
@@ -1922,6 +2046,9 @@
 
   .cal-today {
     margin-left: 0.4rem;
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--tap);
     padding: 0.3rem 0.7rem;
     border: 1px solid var(--glass-edge);
     border-radius: 999px;
@@ -1942,6 +2069,9 @@
   }
 
   .cal-mode {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--tap);
     padding: 0.35rem 0.9rem;
     font-size: 0.85rem;
     color: var(--ink-dim);
@@ -2027,13 +2157,7 @@
   }
 
   .cal-cell.is-weekend {
-    background: rgb(6 16 30 / 0.25);
-  }
-
-  @media (prefers-color-scheme: light) {
-    :root:not([data-theme='dark']) .cal-cell.is-weekend {
-      background: rgb(12 56 76 / 0.05);
-    }
+    background: var(--weekend-bg);
   }
 
   /* A borrowed day is dimmed, never hidden: a month has edges and they matter. */
@@ -2072,14 +2196,8 @@
    */
   .cal-cell.is-today .cal-num {
     background: var(--ink);
-    color: var(--c-deep);
+    color: var(--today-ink);
     font-weight: 700;
-  }
-
-  @media (prefers-color-scheme: light) {
-    :root:not([data-theme='dark']) .cal-cell.is-today .cal-num {
-      color: rgb(244 250 250);
-    }
   }
 
   .cal-cell-body {
@@ -2316,6 +2434,16 @@
   @container list (width < 520px) {
     .cal-cell {
       height: 3.6rem;
+    }
+
+    /*
+     * Seven columns and a 320px viewport leave 45px a cell only if the panel
+     * stops taking 8px off each side for a border it does not need at this
+     * width. A day is a tap target, and 42px is the kind of miss that puts you
+     * in the wrong week.
+     */
+    .cal-body {
+      padding: 0.15rem;
     }
 
     .cal-pip-title,

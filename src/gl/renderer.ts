@@ -23,6 +23,65 @@ export const MAX_DPR = 1.5
 export const IDLE_AFTER_MS = 10_000
 export const IDLE_FPS = 24
 
+/**
+ * The per-frame GPU budget for the shader, in milliseconds.
+ *
+ * Four is a quarter of a 60Hz frame, which leaves the rest of it to the page:
+ * a background that eats the whole budget is not a background.
+ */
+export const BUDGET_MS = 4
+
+/**
+ * Render scales the surface is allowed to fall back to, largest first.
+ *
+ * The noise field costs what it costs per pixel — twelve gradient-noise
+ * evaluations through two levels of domain warp — so on a GPU that cannot
+ * afford it at native resolution there are exactly two honest options: draw
+ * something cheaper, or draw fewer pixels. Measured on an Intel UHD 620-class
+ * integrated GPU, the shader runs at 9.6ms per megapixel, which is 28ms per
+ * frame at 1440x900 with DPR 1.5 — seven times over budget, and nothing about
+ * that is visible in a screenshot.
+ *
+ * Fewer pixels is the right answer here because of what is being drawn: a
+ * smooth, low-frequency fluid field, upscaled bilinearly by the compositor for
+ * free. Making the shader cheaper would mean dropping an octave or a warp
+ * level, which changes what the surface *is* on every machine, including the
+ * ones that were never struggling.
+ */
+export const SCALE_STEPS = [1, 0.8, 0.65, 0.5, 0.4, 0.33] as const
+
+/** Frames to draw at a new scale before the governor is allowed to move again. */
+const SCALE_HOLD_FRAMES = 30
+
+/** With no GPU timer, a frame gap this long means vsync is already being missed. */
+const SLOW_FRAME_MS = 20
+
+/**
+ * Which way the resolution governor should move, given what the last frames
+ * cost. `1` is fewer pixels, `-1` is more, `0` is stay.
+ *
+ * Pure and exported so the whole table can be asserted without a GPU. The two
+ * thresholds are deliberately asymmetric: one step up is 1.56x the pixels
+ * (1 / 0.8^2), so rising needs the measured cost to be under 55% of budget
+ * rather than merely under budget. Without that gap a surface sitting at 4.1ms
+ * would drop a step, measure 2.6ms, rise again, and spend its life
+ * oscillating between two resolutions — which is far more visible than simply
+ * settling a step low.
+ */
+export function governScale(step: number, gpuMs: number | null, frameMs: number): -1 | 0 | 1 {
+  const down = step < SCALE_STEPS.length - 1
+  const up = step > 0
+
+  // No timer extension means no cost signal, only the symptom. A frame gap
+  // over 20ms is vsync already being missed; there is no matching evidence of
+  // headroom, so a surface that steps down this way never steps back up.
+  if (gpuMs === null) return down && frameMs > SLOW_FRAME_MS ? 1 : 0
+
+  if (gpuMs > BUDGET_MS) return down ? 1 : 0
+  if (gpuMs < BUDGET_MS * 0.55) return up ? -1 : 0
+  return 0
+}
+
 /** Largest step the clock will take, so a long stall does not teleport the surface. */
 const MAX_STEP_SECONDS = 0.05
 
@@ -37,6 +96,8 @@ export type SurfaceStats = {
   contextLost: boolean
   /** True while the idle throttle is holding the rate down. */
   idle: boolean
+  /** The resolution governor's current factor on top of the capped DPR. */
+  renderScale: number
 }
 
 type Uniforms = {
@@ -52,15 +113,24 @@ type Uniforms = {
 }
 
 export class Surface {
-  /** Returns null when WebGL2 is unavailable — the caller shows the CSS fallback. */
-  static create(canvas: HTMLCanvasElement): Surface | null {
+  /**
+   * Returns null when WebGL2 is unavailable — the caller shows the CSS fallback.
+   *
+   * `preserveDrawingBuffer` is off in the app and must stay off: keeping the
+   * buffer around costs a copy per frame for something nothing reads. The one
+   * caller that passes true is the surface lab in capture mode, because a
+   * screenshot re-composites the canvas after the frame has been presented, and
+   * without the buffer it re-composites nothing — which is a blank background
+   * and a very confusing PNG. See docs/og.md.
+   */
+  static create(canvas: HTMLCanvasElement, preserveDrawingBuffer = false): Surface | null {
     const gl = canvas.getContext('webgl2', {
       alpha: false,
       antialias: false,
       depth: false,
       stencil: false,
       powerPreference: 'low-power',
-      preserveDrawingBuffer: false,
+      preserveDrawingBuffer,
     })
     if (!gl) return null
     return new Surface(canvas, gl)
@@ -72,6 +142,7 @@ export class Surface {
     gpuMs: null,
     contextLost: false,
     idle: false,
+    renderScale: 1,
   }
 
   /** Multiplies the clock. 1 is real time; the lab uses it to slow the surface down. */
@@ -104,6 +175,14 @@ export class Surface {
   private width = 0
   private height = 0
   private dirtySize = true
+
+  /** The canvas's CSS size, kept so a scale change can recompute without a resize. */
+  private cssWidth = 0
+  private cssHeight = 0
+
+  /** Index into SCALE_STEPS. 0 is native (DPR capped at MAX_DPR). */
+  private scaleStep = 0
+  private framesAtScale = 0
 
   private timerExt: { TIME_ELAPSED_EXT: number; GPU_DISJOINT_EXT: number } | null = null
   private pendingQuery: WebGLQuery | null = null
@@ -148,12 +227,9 @@ export class Surface {
       const entry = entries[0]
       if (!entry) return
       const box = entry.contentBoxSize?.[0]
-      const cssWidth = box ? box.inlineSize : entry.contentRect.width
-      const cssHeight = box ? box.blockSize : entry.contentRect.height
-      const dpr = Math.min(globalThis.devicePixelRatio || 1, MAX_DPR)
-      this.width = Math.max(1, Math.round(cssWidth * dpr))
-      this.height = Math.max(1, Math.round(cssHeight * dpr))
-      this.dirtySize = true
+      this.cssWidth = box ? box.inlineSize : entry.contentRect.width
+      this.cssHeight = box ? box.blockSize : entry.contentRect.height
+      this.resize()
       this.poke()
     })
     this.observer.observe(canvas)
@@ -213,6 +289,36 @@ export class Surface {
     this.poke()
   }
 
+  /**
+   * Wind the clock to a fixed point.
+   *
+   * The surface is a pure function of `uTime` and the two channels, so pinning
+   * the clock is what makes a frame of it reproducible — which is how the OG
+   * image in `docs/og.md` is captured, and how any future "this exact frame"
+   * bug report could be. Set `timeScale` to 0 alongside it to hold there.
+   */
+  seek(seconds: number): void {
+    this.time = Number.isFinite(seconds) ? seconds : 0
+    this.poke()
+  }
+
+  /**
+   * Size the drawing buffer from a CSS box and draw one frame, right now.
+   *
+   * The loop takes its size from a `ResizeObserver` and its frames from
+   * `requestAnimationFrame`, both of which are asynchronous — which is correct
+   * for an app and useless for a capture, where the canvas has to hold a real
+   * frame by the time the page has loaded. A screenshot taken before the first
+   * rAF gets the page background and no error, which is a genuinely confusing
+   * thing to debug. Used by the surface lab's capture mode; see docs/og.md.
+   */
+  renderNow(cssWidth: number, cssHeight: number): void {
+    this.cssWidth = cssWidth
+    this.cssHeight = cssHeight
+    this.resize()
+    this.draw()
+  }
+
   /** Mark interaction: cancels the idle throttle. */
   poke(): void {
     this.lastActivityAt = performance.now()
@@ -244,6 +350,58 @@ export class Surface {
       globalThis.removeEventListener(name, this.onActivity)
     }
     this.release()
+  }
+
+  /** Drawing-buffer size from the CSS size, the capped DPR and the governor. */
+  private resize(): void {
+    const dpr = Math.min(globalThis.devicePixelRatio || 1, MAX_DPR) * this.scale
+    this.width = Math.max(1, Math.round(this.cssWidth * dpr))
+    this.height = Math.max(1, Math.round(this.cssHeight * dpr))
+    this.dirtySize = true
+  }
+
+  private get scale(): number {
+    return SCALE_STEPS[this.scaleStep] ?? 1
+  }
+
+  /**
+   * Keep the shader inside its budget by changing how many pixels it is asked
+   * for, never by changing what it draws.
+   *
+   * The measurement is the GPU's own, via EXT_disjoint_timer_query_webgl2,
+   * because wall-clock frame time is pinned to vsync and says nothing about
+   * headroom: a frame that took 16.7ms may have used 1ms of GPU or 16. Without
+   * that extension there is no cost signal at all, only the symptom — frames
+   * missing their slot — so that is what gets used instead.
+   *
+   * Coming back up needs more headroom than going down needs pressure: one step
+   * up is 1.56x the pixels, so the threshold to rise is well under the
+   * reciprocal of that, and a surface that oscillates between two resolutions
+   * is worse than one that settles a step low.
+   */
+  private governResolution(): void {
+    // Throttled frames are not evidence: an idle surface drawing at 24fps says
+    // nothing about whether it could sustain 60.
+    if (this.stats.idle) return
+
+    this.framesAtScale += 1
+    if (this.framesAtScale < SCALE_HOLD_FRAMES) return
+
+    const direction = governScale(this.scaleStep, this.stats.gpuMs, this.stats.frameMs)
+    if (direction !== 0) this.stepScale(direction)
+  }
+
+  private stepScale(direction: 1 | -1): void {
+    const next = this.scaleStep + direction
+    if (next < 0 || next >= SCALE_STEPS.length) return
+
+    this.scaleStep = next
+    this.framesAtScale = 0
+    this.stats.renderScale = this.scale
+    // The smoothed GPU time was measured at the old size and would drag the
+    // next decision toward the wrong answer for a dozen frames.
+    this.stats.gpuMs = null
+    this.resize()
   }
 
   private scheduleFrame(): void {
@@ -283,6 +441,7 @@ export class Surface {
 
     this.draw()
     this.collectGpuTime()
+    this.governResolution()
   }
 
   /**

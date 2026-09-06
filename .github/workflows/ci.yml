@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Pages needs these; the deploy job below is the only thing that uses them.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# A superseded run has nothing to say about the commit that replaced it.
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test
+
+      # The interesting gate. A moving background means contrast is a range
+      # rather than a number, so this sweeps the palette across pressure and
+      # heat and fails if any ink drops below 4.5:1 anywhere in it.
+      - name: Contrast across the surface's range
+        run: npm run contrast
+
+      - name: Build
+        run: npm run build
+
+      # Publish an explicit allowlist rather than uploading dist/ blind: a
+      # scratch page must not be able to reach a public URL by accident.
+      - name: Deploy allowlist
+        run: npm run deploy:check
+
+      - name: Upload the site
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: check
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

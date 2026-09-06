@@ -193,7 +193,7 @@ describe('every view', () => {
 })
 
 describe('every dialog', () => {
-  it.each(['.detail', '.manage', '.repeat-editor'])('%s sits on glass', (selector) => {
+  it.each(['.detail', '.manage', '.settings', '.repeat-editor'])('%s sits on glass', (selector) => {
     const dialog = document.querySelector<HTMLElement>(selector)
     expect(dialog, `${selector} was not built at boot`).not.toBeNull()
     expect(scrimFor(dialog!), `${selector} is not on a scrim`).not.toBeNull()

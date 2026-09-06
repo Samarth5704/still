@@ -30,6 +30,7 @@ import type {
   Recurrence,
   RecurrenceEnd,
   Result,
+  Settings,
   State,
   Tag,
   Task,
@@ -215,6 +216,21 @@ export class Store {
   expireUndo(snapshot: Snapshot): void {
     const top = this.undoStack[this.undoStack.length - 1]
     if (top === snapshot) this.undoStack.pop()
+  }
+
+  // ---- preferences -------------------------------------------------------
+
+  /**
+   * Change a preference.
+   *
+   * Not undoable, and deliberately: undo in this app is for the thing you just
+   * did to your list, and putting "you also switched the theme" in front of the
+   * task you meant to bring back would be a worse offer than not offering it.
+   * A preference is visible the instant it lands and is changed the same way it
+   * was set.
+   */
+  setSettings(patch: Partial<Settings>): void {
+    this.commit({ ...this.state, settings: { ...this.state.settings, ...patch } })
   }
 
   // ---- projects and tags -------------------------------------------------

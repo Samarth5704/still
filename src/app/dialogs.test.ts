@@ -12,6 +12,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Manage } from './manage.ts'
+import { Settings } from './settings.ts'
 import { Store } from './store.ts'
 import { TaskDetail } from './detail.ts'
 import { restoreFocus } from './dom.ts'
@@ -164,5 +165,86 @@ describe('restoreFocus', () => {
     const gone = button('gone')
     gone.remove()
     expect(restoreFocus(gone, null, () => null)).toBe(false)
+  })
+})
+
+/*
+ * Phase 8. The effects preference finally has a control, and the interesting
+ * part of it is not the radios — it is that all three settings here have a
+ * system-following default plus explicit choices, and an explicit choice has
+ * to outrank the OS in both directions. A control that writes the setting but
+ * shows the request rather than the outcome is the failure worth testing for:
+ * the user asks for full motion on a machine with no WebGL2, gets a gradient,
+ * and has nothing on screen telling them why.
+ */
+describe('Settings', () => {
+  const status = (dialog: Settings): string =>
+    dialog.root.querySelector('.settings-status')?.textContent ?? ''
+
+  function open(effectsStatus = () => 'The surface is flowing.'): {
+    store: Store
+    dialog: Settings
+    said: string[]
+  } {
+    const store = new Store()
+    const said: string[] = []
+    const dialog = new Settings(store, { announce: (m) => said.push(m), effectsStatus })
+    document.body.append(dialog.root)
+    dialog.open()
+    return { store, dialog, said }
+  }
+
+  it('draws four options for effects, not three', () => {
+    // `auto` is the whole reason the preference is independent of the OS rather
+    // than merely unaware of it. Dropping it is the tempting simplification.
+    const { dialog } = open()
+    const values = [...dialog.root.querySelectorAll<HTMLInputElement>('input[name="settings-effects"]')]
+      .map((input) => input.value)
+    expect(values).toEqual(['auto', 'full', 'reduced', 'off'])
+  })
+
+  it('opens on the current answer rather than the first option', () => {
+    const { dialog } = open()
+    const checked = dialog.root.querySelectorAll<HTMLInputElement>('input:checked')
+    expect([...checked].map((input) => input.value)).toEqual(['auto', 'system', '1'])
+  })
+
+  it('saves the moment a choice is made, with no Apply to press', () => {
+    const { store, dialog, said } = open()
+    const reduced = dialog.root.querySelector<HTMLInputElement>('#settings-effects-reduced')!
+    reduced.checked = true
+    reduced.dispatchEvent(new Event('change'))
+
+    expect(store.getState().settings.effects).toBe('reduced')
+    expect(said).toContain('Background effects: Reduced')
+  })
+
+  it('carries the choice into storage, so it survives a reload', () => {
+    const { store, dialog } = open()
+    const light = dialog.root.querySelector<HTMLInputElement>('#settings-theme-light')!
+    light.checked = true
+    light.dispatchEvent(new Event('change'))
+    store.flush()
+
+    expect(new Store().getState().settings.theme).toBe('light')
+  })
+
+  it('reports what the surface actually did, not what was asked for', () => {
+    // The preference is a request; WebGL2 and the OS both get a say after it.
+    const { dialog } = open(() => 'WebGL2 is not available here, so the background is the plain gradient.')
+    expect(status(dialog)).toContain('WebGL2 is not available')
+  })
+
+  it('names each group of radios with a legend', () => {
+    const { dialog } = open()
+    const legends = [...dialog.root.querySelectorAll('legend')].map((l) => l.textContent)
+    expect(legends).toEqual(['Background effects', 'Theme', 'Week starts on'])
+  })
+
+  it('re-reads the store when something else changes it', () => {
+    const { store, dialog } = open()
+    store.setSettings({ effects: 'off' })
+    dialog.sync(store.getState())
+    expect(dialog.root.querySelector<HTMLInputElement>('#settings-effects-off')!.checked).toBe(true)
   })
 })

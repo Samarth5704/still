@@ -41,8 +41,16 @@ WebGL2. No polyfills.
 Three repositories informed this project and belong in the README's
 acknowledgements, all MIT:
 
-- **collidingScopes/liquid-logo** — used *offline* to generate the wordmark and
-  OG image. Its output is committed as static assets; none of its code ships.
+- **collidingScopes/liquid-logo** — read for how it turns a flat mark into
+  liquid. This was written expecting its output to be committed as static
+  assets for the wordmark and OG image; Phase 8 did not do that, and the
+  README says so. The wordmark is live text set in Fraunces, which stays
+  selectable and reflows, and the favicon is two hand-drawn SVG paths. The OG
+  image is a 1200x630 capture of *this project's own shader* from
+  `/shader.html`, which is a better preview of the product than a generated
+  wordmark would have been and needs no third-party output at all. The
+  influence is real and is credited as influence; no asset from it ships,
+  because none was ever made.
 - **dashersw/liquid-glass-js** — studied for its refraction approach. Its code is
   **not** imported: it samples the page through html2canvas, which is untenable
   for a list that changes constantly, and its `Button` class produces a

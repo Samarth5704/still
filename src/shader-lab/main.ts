@@ -51,7 +51,14 @@ const paletteInputs: Record<Group, Record<keyof Ramp, HTMLInputElement>> = {
   },
 }
 
-const surface = Surface.create(canvas)
+/*
+ * Capture mode is read before the context is created, because it changes how
+ * the context is made: a screenshot re-composites the canvas after the frame
+ * has been presented, so the drawing buffer has to survive it.
+ */
+const CAPTURE = new URLSearchParams(location.search).has('capture')
+
+const surface = Surface.create(canvas, CAPTURE)
 
 // Where "at cursor" means, before the pointer has ever moved.
 let cursor = { x: globalThis.innerWidth / 2, y: globalThis.innerHeight / 2 }
@@ -189,9 +196,58 @@ function refreshStats(): void {
           : 'running'
 }
 
+/**
+ * Capture mode.
+ *
+ * `?capture&pressure=0.55&heat=0.28&time=9` hides the panel, seeds the sliders,
+ * pins the clock and holds there, so a screenshot of this page is a *specific*
+ * frame of the surface rather than whichever one the compositor happened to
+ * catch. That is what makes the OG image reproducible from a recipe instead of
+ * from a file someone still has; see docs/og.md.
+ *
+ * The parameters drive the real sliders rather than the renderer directly, so
+ * capture mode cannot drift away from what the panel does — and dropping
+ * `capture` from the URL shows the panel with those exact values loaded.
+ *
+ * The loop is deliberately left RUNNING. Stopping after a frame or two looks
+ * tidier and quietly breaks the capture: the canvas is sized from a
+ * ResizeObserver, whose first callback can land after those frames, so the loop
+ * dies at the default 300x150 with nothing drawn in it. `timeScale` 0 already
+ * holds the picture still; there is nothing for a stop to add.
+ */
+function applyQuery(): void {
+  const params = new URLSearchParams(location.search)
+  const seed = (input: HTMLInputElement, name: string): void => {
+    const value = params.get(name)
+    if (value === null) return
+    input.value = value
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+
+  seed(pressureInput, 'pressure')
+  seed(heatInput, 'heat')
+  seed(stillInput, 'still')
+
+  const time = params.get('time')
+  if (time !== null) {
+    surface?.seek(Number.parseFloat(time))
+    timeScaleInput.value = '0'
+    timeScaleInput.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+
+  if (CAPTURE) el<HTMLFormElement>('panel').hidden = true
+}
+
+
 if (surface) {
   resetPalette()
+  applyQuery()
+  applyInputs()
   surface.snapToTargets()
+  // A capture must hold a real frame by the time the page has loaded: the
+  // loop's first frame is an animation callback away, and a screenshot taken
+  // before it gets the page background and no error at all.
+  if (CAPTURE) surface.renderNow(globalThis.innerWidth, globalThis.innerHeight)
   surface.start()
   // Stats are read on a timer, not in the render loop: the loop must not touch
   // the DOM.

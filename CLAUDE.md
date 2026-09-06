@@ -180,3 +180,70 @@ The full spec is in docs/still-prompt.md. Read it before starting any phase.
   paints var(--glass-bg) registers itself. New bare text fails on the day it is
   written. Neither test can resolve the cascade (no @layer in happy-dom); actual
   contrast across the palette range is Phase 8's script.
+
+### Performance, contrast and CI (Phase 8)
+- CONTRAST IS A RANGE, NOT A NUMBER. scripts/contrast.ts sweeps 21x21 points of
+  pressure x heat, takes the brightest AND darkest pixel the shader can produce
+  at each, composites the scrim (and the three washes over it) and fails the
+  build under 4.5:1. The two worst cases are OPPOSITE CORNERS: dark theme fails
+  on a busy, late crest; light theme fails on a calm, clear trough. Checking one
+  corner passes a stylesheet that is unreadable on an empty list.
+- gl/contrast.ts BOUNDS the shader rather than sampling it: the noise only
+  supplies a height in a known range and a unit normal, so both are swept
+  directly and the noise drops out. Every constant in it is copied from
+  surface.frag.glsl and contrast.test.ts reads them back OUT of the GLSL. Change
+  the shader's arithmetic and that test is what tells you the model went stale.
+- The script's UNCHECKED map is load-bearing: any token in the palette block
+  that is neither an ink it checks nor an exemption with a reason FAILS the run.
+  A new colour cannot arrive without a decision about its contrast.
+- --ink-faint (both themes) and the light theme's --warn were changed because
+  the sweep said 3.70, 2.86 and 3.45. Do not "restore" them by eye.
+- THE LIGHT THEME IS TWO BLOCKS SAYING THE SAME THING — the media query is what
+  `system` means, `[data-theme='light']` is what a choice means, and a choice
+  outranks the OS in both directions. Everything the theme changes is a TOKEN
+  (--field-bg, --weekend-bg, --today-ink, --ground, --warn-wash included), so
+  those two blocks are the whole theme; style.test.ts asserts they are identical
+  and that no prefers-color-scheme rule exists anywhere else.
+- app/settings.ts draws effects (4), theme (3) and week start (2). It knows
+  nothing about the shader: main.ts hands it `effectsStatus()`, which asks the
+  surface what it actually did. A control that shows the request rather than the
+  outcome is how someone concludes the app ignored them.
+- THE SHADER DOES NOT MEET ITS BUDGET AT NATIVE RESOLUTION ON AN INTEGRATED GPU:
+  9.6ms per megapixel measured, 28ms at 1440x900 DPR 1.5 against a 4ms budget.
+  So gl/renderer.ts measures its own GPU time and gives back RESOLUTION until it
+  fits (SCALE_STEPS, governScale). Making the shader cheaper instead would
+  change what the surface is on every machine, including the ones that were
+  fine. governScale is pure and tested; its two thresholds are asymmetric
+  because one step up is 1.56x the pixels, and it NEVER climbs on wall clock
+  alone — a 16.7ms frame is what vsync looks like whether the GPU used 1ms or 16.
+- src/perf.test.ts holds the two structural claims: no layout-reading API in
+  frame/draw/throttled/governResolution, and no innerHTML in any view module.
+  The measured numbers live in docs/performance.md with the machine they came
+  from; `still.store` / `still.render` / `still.surface` exist on globalThis in
+  DEV builds only and are how they were taken.
+- The deploy publishes an ALLOWLIST (scripts/deploy-manifest.ts), not dist/. An
+  unnamed top-level entry fails the build. shader.html is on it deliberately.
+- THE SURFACE LAB HAD A SIX-PHASE-OLD BUG that Phase 8 found by capturing the
+  OG image: lab.css styled `.still-fallback` `display: block`, which outranks
+  the user-agent `[hidden]` rule, so the fallback div sat over the canvas and
+  the sliders never moved the background. It looked plausible because a calm
+  blue wash is a thing this surface does. lab.css now has the same `[hidden]`
+  opt-out block style.css has, and style.test.ts now reads lab.css too — the
+  app's stylesheet had this check since Phase 6, which is exactly why the bug
+  lived in the lab and not in the app.
+- /shader.html?capture&pressure=&heat=&still=&time= is a real feature, not a
+  flag for one script. It seeds the REAL sliders (so it cannot drift from what
+  the panel does), pins the clock via Surface.seek, hides the panel, creates the
+  context with preserveDrawingBuffer (a screenshot re-composites AFTER the frame
+  is presented) and draws one frame synchronously via Surface.renderNow (the
+  loop's first frame is an rAF away, and a screenshot before it captures the
+  page background with no error). The loop is left RUNNING: stopping it races
+  the ResizeObserver and can leave the canvas at 300x150. docs/og.md.
+- The OG image is a frame of OUR OWN shader, captured from the lab, and the
+  attribution says so: nothing from liquid-logo ships, because no asset from it
+  was ever made. docs/still-prompt.md's attribution section was corrected to
+  describe what happened rather than what was planned.
+- docs/accessibility.md is the audit record and the one place the 41.2px
+  calendar day cell at 320px is EXEMPTED, with the agenda named as the
+  equivalent alternative. The exemption expires if the month grid ever becomes
+  the only route to something.

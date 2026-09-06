@@ -275,3 +275,112 @@ describe('glass', () => {
     expect(layerBody('components')).toMatch(/\.glass::before,\s*\.task::before/)
   })
 })
+
+/*
+ * Phase 8. The theme became a real preference, so the light palette has to be
+ * reachable two ways: from the OS (`prefers-color-scheme`) and from an explicit
+ * choice (`[data-theme='light']`), with the choice outranking the OS in both
+ * directions. CSS cannot express "either of these" across a media boundary, so
+ * the block is written twice — and two copies of a palette is exactly the kind
+ * of duplication that drifts one token at a time, silently, in one theme only.
+ */
+describe('the light theme', () => {
+  /** The declarations of the OS-driven block and the explicit one. */
+  function lightBlocks(): [Map<string, string>, Map<string, string>] {
+    const read = (selector: string): Map<string, string> => {
+      const start = css.indexOf(selector)
+      expect(start, `no ${selector} block`).toBeGreaterThan(-1)
+      const open = css.indexOf('{', start)
+      let depth = 0
+      for (let i = open; i < css.length; i += 1) {
+        if (css[i] === '{') depth += 1
+        else if (css[i] === '}') {
+          depth -= 1
+          if (depth === 0) {
+            const body = css.slice(open + 1, i).replace(/\/\*[\s\S]*?\*\//g, '')
+            const found = new Map<string, string>()
+            for (const [, name, value] of body.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) {
+              // Collapse whitespace: the two copies are indented differently.
+              found.set(name!, value!.replace(/\s+/g, ' ').trim())
+            }
+            return found
+          }
+        }
+      }
+      throw new Error(`unterminated ${selector}`)
+    }
+    return [read(":root:not([data-theme='dark']) {"), read(":root[data-theme='light'] {")]
+  }
+
+  it('says exactly the same thing whether the OS asked or the user did', () => {
+    const [fromOS, fromChoice] = lightBlocks()
+    expect(fromOS.size).toBeGreaterThan(6)
+    expect([...fromChoice.keys()].sort()).toEqual([...fromOS.keys()].sort())
+    for (const [name, value] of fromOS) {
+      expect(fromChoice.get(name), `${name} differs between the two light blocks`).toBe(value)
+    }
+  })
+
+  it('changes nothing but tokens, so those two blocks are the whole theme', () => {
+    // A `prefers-color-scheme` rule anywhere else is a piece of the light theme
+    // that an explicit choice cannot reach: it would follow the OS forever.
+    const strip = (text: string): string => text.replace(/\/\*[\s\S]*?\*\//g, '')
+    const all = [...strip(css).matchAll(/prefers-color-scheme/g)].length
+    const inTokens = [...strip(layerBody('tokens')).matchAll(/prefers-color-scheme/g)].length
+    expect(all, 'the light theme has leaked outside @layer tokens').toBe(inTokens)
+    expect(inTokens).toBe(1)
+  })
+})
+
+/*
+ * The surface lab's stylesheet, held to the one rule it broke.
+ *
+ * `lab.css` styled `.still-fallback` with `display: block`, which outranks the
+ * user-agent `[hidden] { display: none }` rule — so the fallback div, hidden
+ * and painted with its default cool ramp, sat over the canvas from Phase 2
+ * until Phase 8. Nobody noticed for six phases because a calm blue wash is a
+ * thing this surface does; what actually found it was capturing the OG image
+ * and getting the same PNG, byte for byte, at four different settings.
+ *
+ * The app's stylesheet has had this check since Phase 6. The lab's did not,
+ * which is precisely why the bug lived there and not here.
+ */
+describe('the surface lab stylesheet', () => {
+  // Comments are stripped before parsing: a comment carrying a comma lands in
+  // the next rule's selector list and quietly hides it from this check.
+  const lab = readFileSync(
+    fileURLToPath(new URL('./shader-lab/lab.css', import.meta.url)),
+    'utf8',
+  ).replace(/\/\*[\s\S]*?\*\//g, '')
+
+  /** Everything the lab toggles with the `hidden` property. */
+  const hiddenByScript = ['.surface', '.still-fallback', '.panel']
+
+  /** Innermost rule blocks, as [selector list, body] pairs. */
+  const rules = (): [string[], string][] =>
+    [...lab.matchAll(/([^{}]*)\{([^{}]*)\}/g)].map(([, prelude, body]) => [
+      (prelude ?? '').split(',').map((p) => p.trim()),
+      body ?? '',
+    ])
+
+  it.each(hiddenByScript)('%s has a [hidden] rule that beats its own display', (selector) => {
+    const setsDisplay = rules().some(
+      ([names, body]) => names.includes(selector) && body.includes('display:'),
+    )
+    expect(setsDisplay, `${selector} no longer sets display; this guard may be stale`).toBe(true)
+
+    // The opt-out may be its own rule or one of several selectors sharing a
+    // block, so look at the block that contains it rather than assume a shape.
+    const optsOut = rules().some(
+      ([names, body]) =>
+        names.includes(`${selector}[hidden]`) && /display:\s*none/.test(body),
+    )
+    expect(optsOut, `${selector} sets display but has no [hidden] { display: none }`).toBe(true)
+  })
+
+  it('keeps the canvas and the fallback in the same stacking position', () => {
+    // They are alternatives, never both: whichever is showing must occupy the
+    // same box, and the one that is not must be gone rather than merely behind.
+    expect(lab).toMatch(/\.surface,\s*\.still-fallback\s*\{[^}]*position:\s*fixed/s)
+  })
+})

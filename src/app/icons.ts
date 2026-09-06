@@ -35,6 +35,7 @@ type IconName =
   | 'archive'
   | 'unarchive'
   | 'settings'
+  | 'sliders'
   | 'note'
 
 const PATHS: Record<IconName, string[]> = {
@@ -60,6 +61,7 @@ const PATHS: Record<IconName, string[]> = {
   archive: ['M3 4.5h18v4H3z', 'M5 8.5v11h14v-11', 'M10 12.5h4'],
   unarchive: ['M3 4.5h18v4H3z', 'M5 8.5v11h14v-11', 'M12 17v-5', 'M9.5 14.5 12 12l2.5 2.5'],
   settings: ['M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z', 'M12 2.5v2.4M12 19.1v2.4M4.2 7l2.1 1.2M17.7 15.8l2.1 1.2M4.2 17l2.1-1.2M17.7 8.2l2.1-1.2'],
+  sliders: ['M4 7h9M17 7h3', 'M4 17h3M11 17h9', 'M15 4.5v5M9 14.5v5'],
   note: ['M5 3.5h14v17H5z', 'M8.5 8h7M8.5 12h7M8.5 16h4'],
 }
 

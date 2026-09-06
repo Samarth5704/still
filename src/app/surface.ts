@@ -18,6 +18,7 @@
  */
 import { DEFAULT_PALETTE, type Palette } from '../gl/palette.ts'
 import { Surface } from '../gl/renderer.ts'
+import type { SurfaceStats } from '../gl/renderer.ts'
 import { paintFallback } from '../gl/fallback.ts'
 import { shadowTintCSS } from '../gl/tint.ts'
 import type { EffectsSetting, PressureSummary } from '../lib/types.ts'
@@ -146,6 +147,17 @@ export class AppSurface {
   /** True when the shader is available at all, whatever the preference says. */
   get hasShader(): boolean {
     return this.surface !== null
+  }
+
+  /**
+   * The renderer's own frame counters, or null in fallback mode.
+   *
+   * Read by the performance harness (`docs/performance.md`) and by nothing in
+   * the app: these are measurements, not state, and putting them on screen
+   * would mean reading them every frame.
+   */
+  get stats(): SurfaceStats | null {
+    return this.surface?.stats ?? null
   }
 
   get currentMode(): SurfaceMode {

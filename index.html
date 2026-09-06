@@ -10,6 +10,45 @@
       content="A task manager whose background reads your backlog: flat and cool when your list is clear, dense and warm when it is not."
     />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+
+    <!--
+      The link preview is the surface itself — a 1200x630 frame of this
+      project's own shader, captured from /shader.html rather than made in
+      another tool. A todo app whose whole idea is that the background reports
+      your backlog should preview as that background.
+
+      Recipe, and the reason each parameter is what it is, in docs/og.md:
+        /shader.html?capture&pressure=0.35&heat=0&time=6   at 1200x630
+
+      og:image must be an absolute URL — crawlers do not resolve relative ones —
+      so this is the only place in the app that hard-codes the deployed origin.
+      Everything else is base-relative and works from any path.
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Still — a todo list that calms down when you do" />
+    <meta
+      property="og:description"
+      content="A task manager whose background reads your backlog: flat and cool when your list is clear, dense and warm when it is not."
+    />
+    <meta property="og:url" content="https://samarth5704.github.io/still/" />
+    <meta property="og:image" content="https://samarth5704.github.io/still/og.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="A dark teal liquid surface, lit and slowly folding — the app's background at rest."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Still — a todo list that calms down when you do" />
+    <meta
+      name="twitter:description"
+      content="A task manager whose background reads your backlog: flat and cool when your list is clear, dense and warm when it is not."
+    />
+    <meta name="twitter:image" content="https://samarth5704.github.io/still/og.jpg" />
+    <meta
+      name="twitter:image:alt"
+      content="A dark teal liquid surface, lit and slowly folding — the app's background at rest."
+    />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
