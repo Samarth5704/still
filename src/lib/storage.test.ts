@@ -53,7 +53,7 @@ describe('parseState', () => {
         },
       ],
       projects: [{ id: 'p1', name: 'Uni', colorToken: 'teal', icon: 'book', archived: false, order: 0 }],
-      tags: [{ id: 'tag1', name: 'admin', colorToken: 'amber' }],
+      tags: [{ id: 'tag1', name: 'admin', colorToken: 'amber', archived: false }],
     }
     const result = parseState(serialiseState(state))
     expect(result.mode).toBe('read-write')
@@ -88,5 +88,56 @@ describe('parseState', () => {
   it('round-trips through serialise', () => {
     const state = defaultState()
     expect(parseState(serialiseState(state)).state).toEqual(state)
+  })
+})
+
+/*
+ * Schema 1 -> 2: `effects` gained `auto` and made it the default.
+ *
+ * Schema 1 shipped `full` as its default and shipped no way to change it, so
+ * every stored `full` from that version is a default nobody picked. Reading it
+ * back as a choice would leave those users with an animated background that
+ * ignores `prefers-reduced-motion` for good — the migration is the only thing
+ * standing between them and that, and the version gate is the only thing that
+ * stops it overruling a real choice once an effects control exists.
+ */
+describe('effects migration', () => {
+  const v1 = (effects: string): string =>
+    JSON.stringify({ settings: { schemaVersion: 1, effects }, tasks: [] })
+
+  it('turns a schema 1 "full" into "auto", because nobody chose it', () => {
+    expect(parseState(v1('full')).state.settings.effects).toBe('auto')
+  })
+
+  it.each(['reduced', 'off'])('leaves a schema 1 "%s" alone', (effects) => {
+    // These could only have been set by hand; there was no UI for any of it.
+    expect(parseState(v1(effects)).state.settings.effects).toBe(effects)
+  })
+
+  it('treats a settings block with no version at all as schema 1', () => {
+    // The field has existed for as long as the format has, so its absence means
+    // "written before this build cared", not "written by this build".
+    const raw = JSON.stringify({ settings: { effects: 'full' }, tasks: [] })
+    expect(parseState(raw).state.settings.effects).toBe('auto')
+  })
+
+  it('stops migrating at schema 2, so a real choice survives', () => {
+    const v2 = JSON.stringify({ settings: { schemaVersion: 2, effects: 'full' }, tasks: [] })
+    expect(parseState(v2).state.settings.effects).toBe('full')
+  })
+
+  it('defaults to auto, and accepts auto back', () => {
+    expect(defaultState().settings.effects).toBe('auto')
+    expect(parseState(v1('auto')).state.settings.effects).toBe('auto')
+  })
+
+  it('falls back to auto on a value from nowhere', () => {
+    expect(parseState(v1('sparkles')).state.settings.effects).toBe('auto')
+  })
+
+  it('stamps the current version on the way out', () => {
+    const parsed = parseState(v1('full')).state
+    expect(parsed.settings.schemaVersion).toBe(SCHEMA_VERSION)
+    expect(JSON.parse(serialiseState(parsed)).settings.schemaVersion).toBe(SCHEMA_VERSION)
   })
 })

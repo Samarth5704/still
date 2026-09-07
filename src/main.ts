@@ -5,33 +5,105 @@
  * modules own their nodes. This file connects them and owns the two things
  * nobody else should — the URL and the keyboard.
  *
- * The shader is not here yet. Phase 7 attaches it to the same store and listens
- * for the `still:ripple` events fired below, which is why completions already
- * report where on screen they happened.
+ * The surface is attached to the same store as everything else and listens for
+ * the `still:ripple` events fired below, so the list never has to know that a
+ * shader exists and the shader never has to know what a task is.
  */
 import './style.css'
 
 import { Announcer } from './app/announce.ts'
+import { Calendar } from './app/calendar.ts'
 import { Header, Nav } from './app/chrome.ts'
+import { Manage } from './app/manage.ts'
 import { QuickAdd } from './app/quickadd.ts'
+import { Settings } from './app/settings.ts'
+import { AppSurface } from './app/surface.ts'
 import { Store } from './app/store.ts'
+import { TaskDetail } from './app/detail.ts'
 import { TaskList } from './app/tasklist.ts'
 import { UndoBar } from './app/undo.ts'
 import { emptyKindFor, renderEmpty } from './app/empty.ts'
 import { el, query, setText } from './app/dom.ts'
-import { groupsForView, parseHash, viewCounts, viewTitle } from './lib/views.ts'
+import { formatLongDate } from './lib/dates.ts'
+import { formatHash, groupsForView, parseHash, viewCounts, viewTitle } from './lib/views.ts'
 import type { View } from './lib/views.ts'
-import type { Task } from './lib/types.ts'
+import type { ISODate, State, Task, WeekStart } from './lib/types.ts'
 
 const store = new Store()
 let view: View = parseHash(location.hash)
 
 const root = query<HTMLElement>(document, '#app')
 const announcer = new Announcer(document.body)
+const surface = new AppSurface(document.body)
 
-const header = new Header()
+const manage = new Manage(store, { announce: (message) => announcer.say(message) })
+
+/**
+ * What the surface actually ended up doing, in one sentence.
+ *
+ * The preference is a request; WebGL2 and — under `auto` — the OS both get a
+ * say after it, and a control that shows the request without the outcome is how
+ * someone concludes the app ignored them. The dialog asks; the surface answers.
+ */
+function effectsStatus(): string {
+  const setting = store.getState().settings.effects
+  const asked =
+    setting === 'auto'
+      ? `Your system asks for ${surface.prefersReducedMotion ? 'reduced motion' : 'full motion'}. `
+      : ''
+
+  if (!surface.hasShader) {
+    return `${asked}WebGL2 is not available here, so the background is the plain gradient.`
+  }
+  switch (surface.currentMode) {
+    case 'shader':
+      return `${asked}The surface is flowing.`
+    case 'still':
+      return `${asked}The surface is holding still. It still shows how much is on your plate and how much of it is late.`
+    default:
+      return `${asked}Nothing is running behind the app.`
+  }
+}
+
+const settings = new Settings(store, {
+  announce: (message) => announcer.say(message),
+  effectsStatus,
+})
+
+const header = new Header(
+  () => manage.open(),
+  () => settings.open(),
+)
 const nav = new Nav()
 const undoBar = new UndoBar()
+
+/**
+ * The theme, applied.
+ *
+ * `system` removes the attribute and lets `prefers-color-scheme` decide; an
+ * explicit choice sets it and outranks the OS in both directions. Written only
+ * when it changes: this is an attribute on `:root`, so every write invalidates
+ * the whole document's style.
+ */
+let appliedTheme = ''
+function applyTheme(theme: State['settings']['theme']): void {
+  if (theme === appliedTheme) return
+  appliedTheme = theme
+  if (theme === 'system') delete document.documentElement.dataset.theme
+  else document.documentElement.dataset.theme = theme
+}
+
+/** A completion anywhere reports where on screen it happened; the surface rides on it. */
+function ripple(origin: { x: number; y: number }): void {
+  window.dispatchEvent(
+    new CustomEvent('still:ripple', { detail: { x: origin.x, y: origin.y, strength: 1 } }),
+  )
+}
+
+const detail = new TaskDetail(store, {
+  announce: (message) => announcer.say(message),
+  ripple,
+})
 
 const heading = el('h1', { class: 'view-title', tabindex: '-1' })
 const listHost = el('div', { class: 'list-host' })
@@ -52,13 +124,11 @@ const quickAdd = new QuickAdd(
   { today: store.getToday(), weekStart: store.getState().settings.weekStartsOn },
 )
 
+type Source = 'list' | 'calendar'
+
 const taskList = new TaskList({
   onToggle: (task, origin) => complete(task, origin),
-  onOpen: (task) => {
-    // The detail dialog arrives in Phase 4. Until then, opening a task says so
-    // rather than doing nothing, which would read as a broken control.
-    announcer.say(`${task.title}. Task detail opens in the next phase.`)
-  },
+  onOpen: (task) => detail.open(task.id),
   onMove: (task, direction) => {
     store.move(task.id, direction)
     announcer.say(`Moved ${task.title} ${direction === -1 ? 'up' : 'down'}`)
@@ -66,37 +136,99 @@ const taskList = new TaskList({
 })
 
 /**
+ * The calendar.
+ *
+ * Its selected day lives in the URL, but a day is a filter rather than a
+ * destination, so it is written with `replaceState`: Back should leave the
+ * calendar, not walk back through every day someone looked at. That also means
+ * no `hashchange`, so no focus move — which is what keeps the arrow keys inside
+ * the grid where the user put them.
+ */
+const calendar = new Calendar({
+  onSelectDay: (day) => {
+    view = { kind: 'calendar', day }
+    history.replaceState(null, '', formatHash(view))
+    render()
+  },
+  onOpenTask: (id) => detail.open(id),
+  onToggle: (id, origin) => {
+    const task = store.getState().tasks.find((t) => t.id === id)
+    if (task) complete(task, origin, 'calendar')
+  },
+  announce: (message) => announcer.say(message),
+})
+
+/**
  * Complete a task: commit immediately so the surface and every count react at
  * once, hold the row on screen for a beat, and offer the change back for eight
  * seconds.
+ *
+ * A repeating task is the one case where the row does *not* leave. Ticking it
+ * finishes one occurrence and the same task reappears on its next date, so
+ * animating it out and then putting it back would be a lie about what just
+ * happened. The undo message says where it went instead.
  */
-function complete(task: Task, origin: { x: number; y: number }): void {
+function complete(task: Task, origin: { x: number; y: number }, source: Source = 'list'): void {
   if (task.done) return
 
-  // Phase 7 turns this into a ripple from the checkbox. Firing it here keeps
-  // the shader out of the list's business entirely.
-  window.dispatchEvent(
-    new CustomEvent('still:ripple', { detail: { x: origin.x, y: origin.y, strength: 1 } }),
-  )
+  // A ripple from the checkbox that was actually tapped. Firing it as an event
+  // keeps the shader out of the list's business entirely.
+  ripple(origin)
 
-  store.setDone(task.id, true)
+  let advancedTo: ISODate | null = null
+  if (store.ruleFor(task)) {
+    advancedTo = store.completeOccurrence(task.id)?.advancedTo ?? null
+  } else {
+    store.setDone(task.id, true)
+  }
   const snapshot = store.peekUndo()
+
+  const undoAction = (): void => {
+    // Only a task that actually left has an exit to cancel.
+    if (advancedTo === null) taskList.cancelExit(task.id)
+    store.undo()
+    announcer.say(`Restored ${task.title}`)
+  }
+  const onExpire = (): void => {
+    if (snapshot) store.expireUndo(snapshot)
+  }
+
+  if (source !== 'list') {
+    // The calendar has no row to animate out and no next row to fall onto: the
+    // entry either changes status in place or moves to another day, and the
+    // component has already handed focus on. Everything else — the commit, the
+    // ripple, the undo window — is identical, which is the point of routing
+    // both through here.
+    const next = advancedTo === null ? null : formatLongDate(advancedTo, store.getToday())
+    announcer.say(next ? `Completed ${task.title}. Next on ${next}.` : `Completed ${task.title}`)
+    undoBar.show(
+      next ? `Completed "${task.title}" — next on ${next}` : `Completed "${task.title}"`,
+      undoAction,
+      onExpire,
+    )
+    return
+  }
+
+  if (advancedTo !== null) {
+    // The row has not been removed, but the new date can carry it out of this
+    // view — ticking today's occurrence of a weekly task moves it to Upcoming.
+    // When that happens the focused checkbox goes with it and focus lands on
+    // <body>, which is the end of keyboard navigation until the user tabs in
+    // from the top of the page.
+    if (document.activeElement === null || document.activeElement === document.body) {
+      taskList.focusNear(task.id)
+    }
+    const next = formatLongDate(advancedTo, store.getToday())
+    announcer.say(`Completed ${task.title}. Next on ${next}.`)
+    undoBar.show(`Completed "${task.title}" — next on ${next}`, undoAction, onExpire)
+    return
+  }
 
   taskList.focusNear(task.id)
   taskList.animateOut(task.id, () => render())
 
   announcer.say(`Completed ${task.title}`)
-  undoBar.show(
-    `Completed "${task.title}"`,
-    () => {
-      taskList.cancelExit(task.id)
-      store.undo()
-      announcer.say(`Restored ${task.title}`)
-    },
-    () => {
-      if (snapshot) store.expireUndo(snapshot)
-    },
-  )
+  undoBar.show(`Completed "${task.title}"`, undoAction, onExpire)
 }
 
 function render(): void {
@@ -105,10 +237,35 @@ function render(): void {
   const pressure = store.getPressure()
   const weekStart = state.settings.weekStartsOn
 
+  // The surface first: it is the slowest thing to react (two seconds of
+  // easing), so starting it before the DOM work gives it a head start rather
+  // than a frame's worth of catch-up.
+  surface.apply(pressure, state.settings.effects)
+
   header.render(pressure)
   nav.render(state, viewCounts(state, today), view)
   setText(heading, viewTitle(view, state))
 
+  if (view.kind === 'calendar') {
+    if (listHost.firstElementChild !== calendar.root) listHost.replaceChildren(calendar.root)
+    calendar.render(state, today, weekStart, view.day)
+  } else {
+    renderList(state, today, weekStart)
+  }
+
+  applyTheme(state.settings.theme)
+
+  // The dialogs read from the same store as everything else, so a rename in
+  // one is visible in the other before the pointer has moved.
+  detail.sync(state, today)
+  manage.sync(state)
+  settings.sync(state)
+
+  announcer.summarise(Header.summary(pressure))
+  quickAdd.setContext({ today, weekStart })
+}
+
+function renderList(state: State, today: ISODate, weekStart: WeekStart): void {
   const groups = groupsForView(state, view, today, weekStart)
 
   if (groups.length === 0) {
@@ -125,9 +282,6 @@ function render(): void {
     if (listHost.firstElementChild !== taskList.root) listHost.replaceChildren(taskList.root)
     taskList.render(groups, state, today, view)
   }
-
-  announcer.summarise(Header.summary(pressure))
-  quickAdd.setContext({ today, weekStart })
 }
 
 // ---- layout ---------------------------------------------------------------
@@ -142,6 +296,9 @@ root.append(
     ]),
   ]),
   undoBar.root,
+  detail.root,
+  manage.root,
+  settings.root,
 )
 
 if (store.readOnly) {
@@ -176,6 +333,10 @@ window.addEventListener('keydown', (event) => {
     target instanceof HTMLElement &&
     (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
 
+  // A modal owns the keyboard while it is up. Quick add is behind it and
+  // unreachable, so stealing the keystroke would only eat it.
+  if (detail.isOpen || manage.isOpen || settings.isOpen) return
+
   if (event.key === '/' && !typing && !event.metaKey && !event.ctrlKey) {
     event.preventDefault()
     quickAdd.focus()
@@ -205,3 +366,17 @@ window.addEventListener('pagehide', () => store.flush())
 
 store.subscribe(() => render())
 store.start()
+
+/*
+ * The performance harness's only foothold, and it exists only in `vite dev`.
+ *
+ * Phase 8 asks for measured numbers rather than assurances, and the numbers
+ * that matter — GPU milliseconds per frame, the cost of a render pass with 200
+ * tasks on the list — live inside module scope where a devtools console cannot
+ * reach them. Rather than exporting them for real, or shipping a debug panel,
+ * dev builds hang the store and the surface off `globalThis` and the production
+ * bundle does not contain this block at all. See docs/performance.md.
+ */
+if (import.meta.env.DEV) {
+  Object.assign(globalThis, { still: { store, surface, render } })
+}

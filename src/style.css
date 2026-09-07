@@ -86,12 +86,43 @@
     --c-moss: rgb(132 190 118);
     --c-clay: rgb(224 132 108);
 
+    /*
+     * The ink ladder, verified rather than eyeballed.
+     *
+     * `--ink-faint` was 122 146 158 through Phase 7 and reads 3.70:1 against
+     * the brightest crest the surface can throw at a busy, late list — under
+     * the scrim, which is the whole point of the scrim. `scripts/contrast.ts`
+     * sweeps the range and picks the floor; these three are the values that
+     * clear 4.5:1 at every point of it, and the script fails the build if a
+     * later edit walks any of them back.
+     */
     --ink: rgb(232 240 244);
     --ink-dim: rgb(168 188 198);
-    --ink-faint: rgb(122 146 158);
+    --ink-faint: rgb(143 163 174);
 
     --warn: rgb(255 178 122);
     --warn-ink: rgb(255 214 184);
+    /* The read-only banner's tint, composited *over* the scrim rather than replacing it. */
+    --warn-wash: rgb(255 178 122 / 0.16);
+
+    /*
+     * The three places the light theme differs beyond ink and glass. As tokens
+     * rather than as their own `prefers-color-scheme` blocks, so the theme
+     * lives in exactly one place and an explicit choice can reach all of it.
+     */
+    --field-bg: rgb(6 16 30 / 0.35);
+    --weekend-bg: rgb(6 16 30 / 0.25);
+    --today-ink: var(--c-deep);
+
+    /*
+     * The ground *under* the surface, painted from the same palette. The canvas
+     * covers it once the module boots, so what it actually does is hold the
+     * first paint.
+     */
+    --ground:
+      radial-gradient(120% 90% at 15% 0%, rgb(12 56 76 / 0.9), transparent 60%),
+      radial-gradient(100% 80% at 85% 100%, rgb(28 112 124 / 0.35), transparent 55%),
+      var(--c-deep);
 
     /*
      * Glass. A real backdrop-filter over real DOM — never a canvas, never a
@@ -102,7 +133,18 @@
     --scrim: 0.82;
     --glass-bg: rgb(6 16 30 / var(--scrim));
     --glass-edge: rgb(134 224 214 / 0.16);
-    --glass-shadow: 0 16px 40px -20px rgb(0 0 0 / 0.7);
+    /*
+     * The outer shadow is tinted from the surface below — not by sampling the
+     * canvas, which would put a GPU readback in front of every paint, but from
+     * the same palette the shader is handed. `app/surface.ts` rewrites
+     * `--glass-tint` whenever heat moves, so a late list casts a red-black
+     * shadow and a clear one a blue-black shadow. The value here is the cool
+     * end, so the chrome is already seated correctly before the first frame.
+     */
+    --glass-tint: rgb(4 10 18 / 0.62);
+    --glass-shadow: 0 16px 40px -20px var(--glass-tint);
+    /* A task row is 40px tall in a stack of its own; the panel shadow fogs it. */
+    --glass-shadow-sm: 0 6px 16px -10px var(--glass-tint);
     --blur: 20px;
 
     --radius: 14px;
@@ -122,19 +164,58 @@
   /*
    * Light theme. The surface behind it is the same shader, seated lighter; the
    * chrome inverts so text keeps its contrast against a paler backdrop.
+   *
+   * Written twice on purpose, and it is the same three-way shape as `effects`:
+   * the media query is what `system` means, and `[data-theme='light']` is what
+   * an explicit choice means — a choice has to outrank the OS in both
+   * directions or it is not a preference, it is a hint. CSS has no way to say
+   * "either of these" across a media boundary, so the block is duplicated and
+   * `style.test.ts` asserts the two declare exactly the same tokens with
+   * exactly the same values. Everything the theme changes is a token, so this
+   * is the only place that duplication exists.
+   *
+   * `--ink-faint` and `--warn` are the values `scripts/contrast.ts` says clear
+   * 4.5:1 against the darkest trough the surface can reach; the Phase 7 values
+   * (96 122 134 and 176 74 20) read 2.86:1 and 3.45:1 there.
    */
   @media (prefers-color-scheme: light) {
     :root:not([data-theme='dark']) {
       --ink: rgb(14 32 42);
-      --ink-dim: rgb(58 84 96);
-      --ink-faint: rgb(96 122 134);
+      --ink-dim: rgb(38 62 74);
+      --ink-faint: rgb(58 82 93);
       --glass-bg: rgb(244 250 250 / var(--scrim));
       --glass-edge: rgb(12 56 76 / 0.12);
-      --glass-shadow: 0 16px 40px -24px rgb(12 56 76 / 0.45);
-      --warn: rgb(176 74 20);
+      --glass-shadow: 0 16px 40px -24px var(--glass-tint);
+      --warn: rgb(144 61 16);
       --warn-ink: rgb(132 52 12);
+      --field-bg: rgb(255 255 255 / 0.55);
+      --weekend-bg: rgb(12 56 76 / 0.05);
+      --today-ink: rgb(244 250 250);
+      --ground:
+        radial-gradient(120% 90% at 15% 0%, rgb(134 224 214 / 0.55), transparent 60%),
+        radial-gradient(100% 80% at 85% 100%, rgb(28 112 124 / 0.18), transparent 55%),
+        rgb(236 244 246);
       color-scheme: light;
     }
+  }
+
+  :root[data-theme='light'] {
+    --ink: rgb(14 32 42);
+    --ink-dim: rgb(38 62 74);
+    --ink-faint: rgb(58 82 93);
+    --glass-bg: rgb(244 250 250 / var(--scrim));
+    --glass-edge: rgb(12 56 76 / 0.12);
+    --glass-shadow: 0 16px 40px -24px var(--glass-tint);
+    --warn: rgb(144 61 16);
+    --warn-ink: rgb(132 52 12);
+    --field-bg: rgb(255 255 255 / 0.55);
+    --weekend-bg: rgb(12 56 76 / 0.05);
+    --today-ink: rgb(244 250 250);
+    --ground:
+      radial-gradient(120% 90% at 15% 0%, rgb(134 224 214 / 0.55), transparent 60%),
+      radial-gradient(100% 80% at 85% 100%, rgb(28 112 124 / 0.18), transparent 55%),
+      rgb(236 244 246);
+    color-scheme: light;
   }
 }
 
@@ -143,24 +224,14 @@
     font-family: var(--font);
     color: var(--ink);
     /*
-     * The static ground. Phase 7 puts the live surface behind this; until then
-     * it is the same palette as a gradient, which is what the WebGL-less
-     * fallback will use too, so this is not throwaway styling.
+     * The ground *under* the surface. The canvas covers it once the module
+     * boots, so what this actually does is hold the first paint: without it the
+     * page flashes white between the HTML arriving and the first frame, which
+     * is the one moment the whole premise of the app is on screen and wrong.
+     * The theme picks the gradient; see `--ground` in the tokens layer.
      */
-    background:
-      radial-gradient(120% 90% at 15% 0%, rgb(12 56 76 / 0.9), transparent 60%),
-      radial-gradient(100% 80% at 85% 100%, rgb(28 112 124 / 0.35), transparent 55%),
-      var(--c-deep);
+    background: var(--ground);
     background-attachment: fixed;
-  }
-
-  @media (prefers-color-scheme: light) {
-    body:not([data-theme='dark']) {
-      background:
-        radial-gradient(120% 90% at 15% 0%, rgb(134 224 214 / 0.55), transparent 60%),
-        radial-gradient(100% 80% at 85% 100%, rgb(28 112 124 / 0.18), transparent 55%),
-        rgb(236 244 246);
-    }
   }
 
   :focus-visible {
@@ -194,6 +265,36 @@
 }
 
 @layer layout {
+  /*
+   * The surface. Fixed and behind everything, with no pointer target of its
+   * own: a full-screen canvas that swallowed clicks would eat every gap
+   * between the cards.
+   *
+   * `contain: layout paint` is the structural half of "the render loop touches
+   * no DOM". The loop only ever writes `canvas.width`/`height`, but a canvas
+   * resize inside normal flow is a layout invalidation, and containment makes
+   * it impossible for that to reach the app even if something here changes.
+   */
+  .still-surface {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    overflow: hidden;
+    contain: layout paint;
+  }
+
+  .surface-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* `display: block` above beats the user-agent `[hidden]` rule. */
+  .surface-canvas[hidden] {
+    display: none;
+  }
+
   #app {
     display: flex;
     flex-direction: column;
@@ -258,7 +359,13 @@
     position: relative;
   }
 
-  .glass::before {
+  /*
+   * The one-pixel highlight. A task row is a card like any other, so it gets
+   * the same edge — it is just not `.glass`, because it carries its own radius
+   * and its own shadowless weight.
+   */
+  .glass::before,
+  .task::before {
     content: '';
     position: absolute;
     inset: 0;
@@ -402,10 +509,13 @@
       justify-content: space-around;
     }
 
-    /* Projects and their heading are a desktop affordance; the bar keeps to the
-       four primary views so each target stays comfortably wide. */
+    /* Projects, tags and their headings are a desktop affordance; the bar keeps
+       to the four primary views so each target stays comfortably wide. The
+       catalogues are still reachable — the manage button lives in the header,
+       which is why it is not tucked into the projects heading. */
     .app-nav .nav-heading,
-    .app-nav .nav-projects {
+    .app-nav .nav-projects,
+    .app-nav .nav-tags {
       display: none;
     }
 
@@ -557,11 +667,31 @@
 
   /* ---- list ---- */
 
+  /*
+   * Both headings sit on a plate rather than on the shader.
+   *
+   * They used to be bare text on the page background, which was safe only
+   * because that background was a fixed gradient. It is a moving surface now,
+   * and "Today" over a passing crest is exactly the failure the scrim rule
+   * exists to prevent. `width: fit-content` keeps the plate the size of the
+   * words, so the shader still fills the rest of the row and the list does not
+   * turn into a stack of full-width bars.
+   */
+  .view-title,
+  .group-title {
+    width: fit-content;
+    max-width: 100%;
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--blur)) saturate(1.4);
+    border-radius: var(--radius-sm);
+  }
+
   .view-title {
     font-family: var(--font-display);
     font-size: clamp(1.5rem, 4cqi, 2rem);
     font-weight: 400;
-    padding: 0.25rem 0.25rem 0.75rem;
+    margin-bottom: 0.5rem;
+    padding: 0.15rem 0.6rem 0.3rem;
   }
 
   .view-title:focus-visible {
@@ -576,8 +706,14 @@
     font-size: 0.76rem;
     text-transform: uppercase;
     letter-spacing: 0.1em;
-    color: var(--ink-faint);
-    padding: 0 0.25rem 0.4rem;
+    /*
+     * `--ink-faint` was chosen against a still gradient. On a plate over a
+     * moving surface the dimmest ink in the palette is the first thing to go,
+     * so the group label steps up one rung. It is still quieter than the rows.
+     */
+    color: var(--ink-dim);
+    margin-bottom: 0.4rem;
+    padding: 0.15rem 0.5rem 0.2rem;
   }
 
   .group[data-tone='overdue'] .group-title {
@@ -597,19 +733,21 @@
     gap: 0.65rem;
     padding: 0.5rem 0.6rem;
     border-radius: var(--radius-sm);
-    background: rgb(6 16 30 / 0.55);
-    backdrop-filter: blur(12px) saturate(1.3);
+    /*
+     * `--glass-bg`, not a hand-rolled alpha. This row was 0.55 while the thing
+     * behind it was a fixed gradient and nothing moved; over the live surface
+     * that is a crest passing under a task title. The floor is the floor, and
+     * it is one token so Phase 8's contrast script has one number to sample.
+     */
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--blur)) saturate(1.4);
+    box-shadow: var(--glass-shadow-sm);
+    position: relative;
     border-left: 3px solid transparent;
     transition:
       opacity var(--dur) var(--ease),
       translate var(--dur) var(--ease),
       background var(--dur) var(--ease);
-  }
-
-  @media (prefers-color-scheme: light) {
-    :root:not([data-theme='dark']) .task {
-      background: rgb(250 253 253 / 0.72);
-    }
   }
 
   .task:hover {
@@ -765,6 +903,13 @@
 
   /* ---- empty states ---- */
 
+  /*
+   * An empty list is the state this whole app is built to reward, so it is also
+   * the state where the surface is at its calmest and most visible. That is not
+   * a reason to put the words straight on it: the same scrim rule applies, and
+   * a panel that reads as deliberate is better than text that happens to be
+   * legible today.
+   */
   .empty {
     display: flex;
     flex-direction: column;
@@ -772,6 +917,10 @@
     gap: 0.6rem;
     padding: clamp(2rem, 8vh, 4.5rem) 1.25rem;
     text-align: center;
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--blur)) saturate(1.4);
+    border-radius: var(--radius);
+    box-shadow: var(--glass-shadow);
     animation: rise 500ms var(--ease) both;
   }
 
@@ -884,7 +1033,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    min-height: 36px;
+    min-height: var(--tap);
     padding: 0.35rem 0.75rem;
     border-radius: var(--radius-sm);
     background: rgb(134 224 214 / 0.14);
@@ -900,12 +1049,1435 @@
 
   .banner {
     padding: 0.6rem 1rem;
-    background: rgb(255 178 122 / 0.16);
+    /*
+     * The warn wash composited *over* the scrim rather than used as the
+     * background. A 0.16 tint is a tint, not a surface, and this line is the
+     * one the user reads when their data will not be saved.
+     */
+    background:
+      linear-gradient(var(--warn-wash), var(--warn-wash)),
+      var(--glass-bg);
+    backdrop-filter: blur(var(--blur)) saturate(1.4);
     border-bottom: 1px solid rgb(255 178 122 / 0.3);
     color: var(--warn-ink);
     font-size: 0.88rem;
     text-align: center;
   }
+
+  /* ---- shared controls ---- */
+
+  /*
+   * Every icon-only control is a full 44px target with its glyph centred
+   * inside. The negative margins that used to be needed for that are gone:
+   * these sit in flex rows that can afford the space.
+   */
+  .icon-button {
+    display: grid;
+    place-items: center;
+    width: var(--tap);
+    height: var(--tap);
+    flex: none;
+    border-radius: 50%;
+    color: var(--ink-dim);
+    transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+  }
+
+  .icon-button:hover {
+    background: rgb(134 224 214 / 0.1);
+    color: var(--ink);
+  }
+
+  .icon-button.is-danger:hover {
+    background: rgb(224 132 108 / 0.16);
+    color: var(--c-clay);
+  }
+
+  .text-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: var(--tap);
+    /* "Delete task" breaking across two lines makes the button taller than
+       everything beside it and the footer starts to look accidental. */
+    white-space: nowrap;
+    padding: 0.35rem 0.85rem;
+    border: 1px solid var(--glass-edge);
+    border-radius: var(--radius-sm);
+    color: var(--ink-dim);
+    font-size: 0.9rem;
+    transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+  }
+
+  .text-button:hover {
+    background: rgb(134 224 214 / 0.1);
+    color: var(--ink);
+  }
+
+  .text-button.is-primary {
+    background: rgb(134 224 214 / 0.16);
+    border-color: rgb(134 224 214 / 0.34);
+    color: var(--ink);
+  }
+
+  .text-button.is-danger {
+    color: var(--c-clay);
+    border-color: rgb(224 132 108 / 0.3);
+  }
+
+  .text-button.is-danger:hover {
+    background: rgb(224 132 108 / 0.14);
+    color: var(--c-clay);
+  }
+
+  .header-end {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .nav-tags .nav-icon {
+    color: var(--nav-dot, var(--ink-faint));
+  }
+
+  /* ---- dialogs ---- */
+
+  /*
+   * One base for all three. A modal `<dialog>` already traps focus, closes on
+   * Escape and sits in the top layer; what it does not do is look like it
+   * belongs, so it gets the same glass as everything else and a backdrop that
+   * blurs the surface rather than blacking it out — the shader is still the
+   * ground the app stands on, even with a dialog over it.
+   */
+  .detail,
+  .manage,
+  .settings,
+  .ask,
+  .repeat-editor {
+    width: min(38rem, calc(100vw - 2rem));
+    max-height: min(44rem, calc(100svh - 2rem));
+    /*
+     * The reset's `* { margin: 0 }` also strips the user-agent `margin: auto`
+     * that centres a modal dialog, which drops it into the top-left corner. It
+     * has to be put back by hand.
+     */
+    margin: auto;
+    padding: 0;
+    border: 1px solid var(--glass-edge);
+    color: var(--ink);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .ask {
+    width: min(28rem, calc(100vw - 2rem));
+  }
+
+  .detail:not([open]),
+  .manage:not([open]),
+  .settings:not([open]),
+  .ask:not([open]),
+  .repeat-editor:not([open]) {
+    display: none;
+  }
+
+  .detail::backdrop,
+  .manage::backdrop,
+  .settings::backdrop,
+  .ask::backdrop,
+  .repeat-editor::backdrop {
+    background: rgb(6 16 30 / 0.5);
+    backdrop-filter: blur(3px);
+  }
+
+  .settings {
+    width: min(30rem, calc(100vw - 2rem));
+  }
+
+  /*
+   * A preference group. `<fieldset>` carries its own user-agent border and
+   * padding; the legend is doing the naming, so the box is not needed.
+   */
+  .settings-group {
+    border: none;
+    padding: 0;
+  }
+
+  .settings-group + .settings-group {
+    margin-top: 1.25rem;
+  }
+
+  .choice-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-top: 0.5rem;
+  }
+
+  /*
+   * The whole row is the label, so the target is the option rather than the
+   * 16px circle beside it — which is what gets this past 44px without drawing
+   * anything that looks like a button.
+   */
+  .choice {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    min-height: var(--tap);
+    padding: 0.35rem 0.6rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+
+  .choice:hover {
+    background: var(--field-bg);
+  }
+
+  /* The ring belongs on the row, not on the 16px circle inside it. */
+  .choice:has(:focus-visible) {
+    outline: 2px solid var(--c-foam);
+    outline-offset: 2px;
+  }
+
+  .choice input {
+    flex: none;
+    width: 1.05rem;
+    height: 1.05rem;
+    accent-color: var(--c-foam);
+  }
+
+  .choice-body {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .choice-hint {
+    color: var(--ink-faint);
+    font-size: 0.82rem;
+  }
+
+  .settings-status {
+    margin-top: 0.6rem;
+  }
+
+  .detail-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.6rem 0.5rem 1rem;
+    border-bottom: 1px solid var(--glass-edge);
+  }
+
+  .detail-title,
+  .manage-heading {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-display);
+    font-size: 1.25rem;
+    font-weight: 400;
+    line-height: 1.3;
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 0.4rem 0.5rem;
+  }
+
+  .detail-title:hover {
+    background: rgb(134 224 214 / 0.07);
+  }
+
+  .detail-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+    padding: 1rem;
+    overflow-y: auto;
+  }
+
+  .detail-foot {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.6rem 1rem;
+    border-top: 1px solid var(--glass-edge);
+  }
+
+  /* Every way out of the detail dialog saves; this is the line that says so. */
+  .detail-hint {
+    align-self: center;
+    font-size: 0.78rem;
+    color: var(--ink-faint);
+    text-align: center;
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-width: 0;
+  }
+
+  .field[hidden] {
+    display: none;
+  }
+
+  .field-row {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    gap: 0.75rem;
+  }
+
+  .field-row[hidden] {
+    display: none;
+  }
+
+  .field-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--ink-faint);
+  }
+
+  .field-hint {
+    font-size: 0.8rem;
+    color: var(--ink-faint);
+  }
+
+  .field-hint.is-overdue {
+    color: var(--warn);
+  }
+
+  .detail-notes,
+  .detail-date,
+  .detail-time,
+  .detail-select,
+  .detail-inline-input,
+  .manage-name,
+  .subtask-title,
+  .colour-select {
+    width: 100%;
+    /*
+     * The tap floor, not 2.5rem. Phase 8 measured every control in the app at
+     * 320px: these were the ones that came back at 40px, which is comfortably
+     * over the WCAG minimum and four pixels under the one this project set
+     * itself. A text field is the control people miss and then mis-tap into.
+     */
+    min-height: var(--tap);
+    padding: 0.45rem 0.6rem;
+    background: var(--field-bg);
+    border: 1px solid var(--glass-edge);
+    border-radius: var(--radius-sm);
+    color: var(--ink);
+    font-size: 0.92rem;
+  }
+
+  .detail-notes {
+    resize: vertical;
+    line-height: 1.5;
+  }
+
+  /* ---- priority ---- */
+
+  .priority-set {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .priority-option,
+  .tag-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 2.25rem;
+    padding: 0.3rem 0.7rem;
+    border: 1px solid var(--glass-edge);
+    border-radius: 999px;
+    color: var(--ink-dim);
+    font-size: 0.86rem;
+    cursor: pointer;
+    transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+  }
+
+  .priority-option:hover,
+  .tag-label:hover {
+    background: rgb(134 224 214 / 0.09);
+    color: var(--ink);
+  }
+
+  .priority-mark {
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-faint);
+  }
+
+  .priority-input:checked + .priority-option {
+    background: rgb(134 224 214 / 0.18);
+    border-color: rgb(134 224 214 / 0.4);
+    color: var(--ink);
+  }
+
+  /* The focus ring belongs on the label, since the input itself is off-screen. */
+  .priority-input:focus-visible + .priority-option,
+  .tag-input:focus-visible + .tag-label {
+    outline: 2px solid var(--c-foam);
+    outline-offset: 2px;
+  }
+
+  /* ---- tags ---- */
+
+  .tag-set {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .tag-input:checked + .tag-label {
+    background: color-mix(in srgb, var(--chip) 22%, transparent);
+    border-color: color-mix(in srgb, var(--chip) 45%, transparent);
+    color: var(--ink);
+  }
+
+  .inline-form {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .inline-add {
+    display: grid;
+    place-items: center;
+    width: var(--tap);
+    height: var(--tap);
+    flex: none;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--glass-edge);
+    color: var(--ink-dim);
+  }
+
+  .inline-add:hover {
+    background: rgb(134 224 214 / 0.12);
+    color: var(--ink);
+  }
+
+  /* ---- recurrence, on the task ---- */
+
+  .field-repeat {
+    gap: 0.5rem;
+    padding-top: 0.9rem;
+    border-top: 1px solid var(--glass-edge);
+  }
+
+  /*
+   * A grid rather than a wrapping flex row: the rule can run to two lines, and
+   * in a flex row that pushes the icon onto a line of its own above it.
+   */
+  .repeat-body {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: 0.2rem 0.5rem;
+    font-size: 0.92rem;
+    color: var(--ink);
+  }
+
+  .repeat-body > .icon {
+    margin-top: 0.15rem;
+  }
+
+  /*
+   * The position in the series, never a count of what is left. A skipped
+   * occurrence spends one of a counted rule's turns, so "3 of 10" stays true
+   * where "7 left" would quietly stop being.
+   */
+  .repeat-progress {
+    grid-column: 2;
+    font-size: 0.8rem;
+    color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .repeat-progress:empty {
+    display: none;
+  }
+
+  .repeat-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .repeat-buttons .text-button[hidden] {
+    display: none;
+  }
+
+  /*
+   * Which occurrences the edits in this visit are landing on. It appears only
+   * after the question has been answered, and it carries the way to change the
+   * answer, so a scope chosen in passing is never invisible or final.
+   */
+  .scope-note {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.35rem;
+    padding: 0.5rem 0.7rem;
+    background: rgb(134 224 214 / 0.09);
+    border: 1px solid rgb(134 224 214 / 0.22);
+    border-radius: var(--radius-sm);
+    font-size: 0.84rem;
+    color: var(--ink-dim);
+  }
+
+  .scope-note[hidden] {
+    display: none;
+  }
+
+  .link-button {
+    color: var(--ink);
+    font-size: 0.84rem;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    /* An inline word inside a sentence cannot be 44px tall without breaking the
+       line box, so it gets its target from padding it can afford. */
+    padding: 0.25rem;
+    margin: -0.25rem;
+    border-radius: var(--radius-sm);
+  }
+
+  .link-button:hover {
+    background: rgb(134 224 214 / 0.12);
+  }
+
+  /* ---- the recurrence editor ---- */
+
+  /* Narrow enough that "3" and "weeks" stay on one line in the right-hand
+     column of the frequency row, wide enough for three digits. */
+  .repeat-number {
+    width: 4.5rem;
+    flex: none;
+  }
+
+  .repeat-unit {
+    font-size: 0.9rem;
+    color: var(--ink-dim);
+  }
+
+  .repeat-choice {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    /* A radio is a small hit area; the row it sits in carries the target. */
+    min-height: var(--tap);
+  }
+
+  /*
+   * Both sit inline beside their radio; full width would wrap them onto a line
+   * of their own and break the "On <date>" sentence the row reads as. The
+   * number fields are excluded by name — they carry their own narrow width, and
+   * this rule comes later in the file, so without the exclusion it wins.
+   */
+  .repeat-choice .detail-select,
+  .repeat-choice .detail-date:not(.repeat-number) {
+    width: auto;
+    min-width: 8.5rem;
+    flex: 0 1 auto;
+  }
+
+  .repeat-choice-label {
+    min-width: 4.5rem;
+    font-size: 0.9rem;
+    color: var(--ink-dim);
+    cursor: pointer;
+  }
+
+  .repeat-radio {
+    width: 1.1rem;
+    height: 1.1rem;
+    flex: none;
+    accent-color: var(--c-foam);
+  }
+
+  /* A disabled control still says what the choice beside it would do. */
+  .repeat-choice :disabled {
+    opacity: 0.45;
+  }
+
+  .weekday-set {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+  }
+
+  .weekday-label {
+    display: inline-grid;
+    place-items: center;
+    min-width: var(--tap);
+    min-height: var(--tap);
+    padding: 0.3rem 0.5rem;
+    border: 1px solid var(--glass-edge);
+    border-radius: 999px;
+    color: var(--ink-dim);
+    font-size: 0.84rem;
+    cursor: pointer;
+    transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+  }
+
+  .weekday-label:hover {
+    background: rgb(134 224 214 / 0.09);
+    color: var(--ink);
+  }
+
+  .weekday-input:checked + .weekday-label {
+    background: rgb(134 224 214 / 0.18);
+    border-color: rgb(134 224 214 / 0.4);
+    color: var(--ink);
+  }
+
+  .weekday-input:focus-visible + .weekday-label {
+    outline: 2px solid var(--c-foam);
+    outline-offset: 2px;
+  }
+
+  /*
+   * The readback. Nobody can hold "every other week on Tuesday and Thursday"
+   * in their head and check the parity, so the rule says itself in words and
+   * then shows the next five dates it produces. Both come from the same
+   * functions the rest of the app reads the rule with, so neither can flatter
+   * the other.
+   */
+  .repeat-readback {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.8rem;
+    background: rgb(134 224 214 / 0.07);
+    border: 1px solid var(--glass-edge);
+    border-radius: var(--radius-sm);
+  }
+
+  .repeat-summary {
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    font-weight: 400;
+    line-height: 1.35;
+    color: var(--ink);
+    text-wrap: pretty;
+  }
+
+  .repeat-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .repeat-preview li {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.25rem 0;
+    font-size: 0.88rem;
+    border-bottom: 1px solid rgb(134 224 214 / 0.08);
+  }
+
+  .repeat-preview li:last-child {
+    border-bottom: none;
+  }
+
+  .repeat-preview-date {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .repeat-preview-day {
+    color: var(--ink-faint);
+  }
+
+  .repeat-foot {
+    flex-wrap: wrap;
+  }
+
+  .repeat-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .repeat-editor .text-button[hidden] {
+    display: none;
+  }
+
+  .repeat-editor .text-button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  /* ---- subtasks ---- */
+
+  .subtasks {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding-top: 0.9rem;
+    border-top: 1px solid var(--glass-edge);
+  }
+
+  .subtasks[hidden] {
+    display: none;
+  }
+
+  .subtask-progress {
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-dim);
+  }
+
+  .subtask-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .subtask {
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+  }
+
+  .check-sm {
+    width: var(--tap);
+    height: var(--tap);
+    margin: 0;
+  }
+
+  .check-sm::before {
+    width: 1.15rem;
+    height: 1.15rem;
+  }
+
+  .subtask.is-done .check {
+    color: var(--c-foam);
+  }
+
+  .subtask.is-done .check::before {
+    border-color: var(--c-foam);
+  }
+
+  .subtask.is-done .subtask-title {
+    color: var(--ink-faint);
+    text-decoration: line-through;
+    text-decoration-color: var(--ink-faint);
+  }
+
+  .subtask-title {
+    min-height: 2.25rem;
+    border-color: transparent;
+    background: none;
+  }
+
+  .subtask-title:hover {
+    border-color: var(--glass-edge);
+  }
+
+  .parent-prompt {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    padding: 0.6rem 0.8rem;
+    background: rgb(134 224 214 / 0.1);
+    border: 1px solid rgb(134 224 214 / 0.25);
+    border-radius: var(--radius-sm);
+    font-size: 0.9rem;
+  }
+
+  .parent-prompt[hidden] {
+    display: none;
+  }
+
+  .prompt-actions {
+    display: flex;
+    gap: 0.4rem;
+  }
+
+  /* ---- the question dialog ---- */
+
+  .ask-body {
+    padding: 1rem 1rem 0.25rem;
+  }
+
+  .ask-title {
+    font-family: var(--font-display);
+    font-size: 1.1rem;
+  }
+
+  .ask-message {
+    margin-top: 0.4rem;
+    font-size: 0.9rem;
+    color: var(--ink-dim);
+  }
+
+  .ask-choices {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding: 0.75rem 1rem;
+    overflow-y: auto;
+  }
+
+  /*
+   * Every option is a full-width button that says what it does. There is no
+   * "OK": a yes/no would have to pick one of these silently, which is the exact
+   * thing this dialog exists to avoid.
+   */
+  .ask-choice {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.1rem;
+    min-height: var(--tap);
+    padding: 0.55rem 0.8rem;
+    text-align: left;
+    border: 1px solid var(--glass-edge);
+    border-radius: var(--radius-sm);
+    color: var(--ink);
+    transition: background var(--dur) var(--ease);
+  }
+
+  .ask-choice:hover {
+    background: rgb(134 224 214 / 0.1);
+  }
+
+  .ask-choice[data-tone='danger'] {
+    border-color: rgb(224 132 108 / 0.32);
+    color: var(--c-clay);
+  }
+
+  .ask-choice[data-tone='danger']:hover {
+    background: rgb(224 132 108 / 0.14);
+  }
+
+  .ask-choice-label {
+    font-size: 0.95rem;
+  }
+
+  .ask-choice-detail {
+    font-size: 0.8rem;
+    color: var(--ink-faint);
+  }
+
+  .ask-footer {
+    display: flex;
+    justify-content: flex-end;
+    padding: 0.6rem 1rem;
+    border-top: 1px solid var(--glass-edge);
+  }
+
+  .ask-cancel {
+    min-height: var(--tap);
+    padding: 0.35rem 0.85rem;
+    border-radius: var(--radius-sm);
+    color: var(--ink-dim);
+    font-size: 0.9rem;
+  }
+
+  .ask-cancel:hover {
+    color: var(--ink);
+  }
+
+  /* ---- managing projects and tags ---- */
+
+  .manage-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .manage-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .manage-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .manage-row.is-archived .manage-name,
+  .manage-row.is-archived .manage-usage {
+    color: var(--ink-faint);
+  }
+
+  .swatch-wrap {
+    position: relative;
+    display: grid;
+    place-items: center;
+    flex: none;
+  }
+
+  /* The select is the real control; the swatch is the part you can see. */
+  .swatch {
+    position: absolute;
+    width: 0.85rem;
+    height: 0.85rem;
+    border-radius: 50%;
+    background: var(--chip, var(--c-teal));
+    pointer-events: none;
+  }
+
+  .colour-select {
+    width: var(--tap);
+    height: var(--tap);
+    min-height: var(--tap);
+    padding: 0;
+    color: transparent;
+    appearance: none;
+    background: none;
+    border-color: transparent;
+    border-radius: 50%;
+  }
+
+  .colour-select:hover {
+    border-color: var(--glass-edge);
+  }
+
+  .colour-select option {
+    color: var(--ink);
+    background: var(--c-deep);
+  }
+
+  .manage-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .manage-usage {
+    font-size: 0.76rem;
+    color: var(--ink-faint);
+  }
+
+  .manage-error {
+    font-size: 0.82rem;
+    color: var(--warn);
+  }
+
+  @media (width < 720px) {
+    .detail-body {
+      gap: 0.9rem;
+    }
+
+    .field-row {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+  }
+
+  /*
+   * Below this the footer cannot hold two buttons and a sentence without the
+   * buttons shrinking below a comfortable target. The hint is reassurance, not
+   * information about the user's data — the behaviour it describes is the same
+   * either way — so it is the part that gives way rather than the controls.
+   */
+  @media (width < 560px) {
+    .detail-hint {
+      display: none;
+    }
+  }
+  /* ---- calendar ---------------------------------------------------------
+   *
+   * Two layouts over one component: a six-week grid and an agenda, with the
+   * selected day's list underneath both. The grid is a real `<table>` with
+   * `role="grid"` — the cells are the focusable controls, per the date-grid
+   * convention, so there is no button inside a gridcell fighting it for the
+   * keyboard.
+   */
+  .calendar {
+    display: grid;
+    gap: var(--gap);
+  }
+
+  @container list (width > 860px) {
+    .calendar {
+      grid-template-columns: minmax(0, 1fr) minmax(260px, 22rem);
+      align-items: start;
+    }
+
+    .cal-head {
+      grid-column: 1 / -1;
+    }
+  }
+
+  /*
+   * The month name, the stepper, "Today" and the layout switch are four
+   * text-bearing controls with no surface of their own, so the strip that
+   * holds them becomes the surface. Plating each one separately would give the
+   * calendar four floating pills above a panel, which is a worse-looking way
+   * to obey the same rule.
+   */
+  .cal-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.3rem 0.5rem;
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--blur)) saturate(1.4);
+    border-radius: var(--radius);
+    box-shadow: var(--glass-shadow-sm);
+  }
+
+  .cal-nav {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .cal-title {
+    font-family: var(--font-display);
+    font-size: 1.15rem;
+    min-width: 9ch;
+    text-align: center;
+  }
+
+  .cal-today {
+    margin-left: 0.4rem;
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--tap);
+    padding: 0.3rem 0.7rem;
+    border: 1px solid var(--glass-edge);
+    border-radius: 999px;
+    color: var(--ink-dim);
+    font-size: 0.85rem;
+  }
+
+  .cal-today:hover {
+    color: var(--ink);
+    border-color: color-mix(in srgb, var(--c-foam) 45%, transparent);
+  }
+
+  .cal-modes {
+    display: flex;
+    border: 1px solid var(--glass-edge);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+
+  .cal-mode {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--tap);
+    padding: 0.35rem 0.9rem;
+    font-size: 0.85rem;
+    color: var(--ink-dim);
+  }
+
+  /*
+   * The chosen layout is marked by weight and a filled ground, not by hue: a
+   * segmented control whose only state is a tint disappears in greyscale and
+   * for most colour-vision deficiencies.
+   */
+  .cal-mode.is-current {
+    background: rgb(134 224 214 / 0.16);
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  .cal-body {
+    padding: 0.5rem;
+    border: 1px solid var(--glass-edge);
+    min-width: 0;
+  }
+
+  .cal-grid {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+  }
+
+  /*
+   * Each of these sets `display`, which beats the user-agent
+   * `[hidden] { display: none }` no matter how specific that is. Toggling
+   * `hidden` on a node styled `display: flex` and having it stay on screen is
+   * a defect this stylesheet has already shipped once — see the undo bar — so
+   * every one gets its own opt-out, written singly so the guard in
+   * style.test.ts can find it.
+   */
+  .cal-grid[hidden] {
+    display: none;
+  }
+
+  .cal-agenda[hidden] {
+    display: none;
+  }
+
+  .cal-day-list[hidden] {
+    display: none;
+  }
+
+  .cal-day-load[hidden],
+  .cal-day-empty[hidden] {
+    display: none;
+  }
+
+  .check[hidden] {
+    display: none;
+  }
+
+  .cal-entry-mark[hidden] {
+    display: none;
+  }
+
+  .cal-weekday {
+    padding: 0.35rem 0.2rem;
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  .cal-cell {
+    height: 5.5rem;
+    vertical-align: top;
+    padding: 0.3rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+  }
+
+  .cal-cell:hover {
+    background: rgb(134 224 214 / 0.08);
+  }
+
+  .cal-cell.is-weekend {
+    background: var(--weekend-bg);
+  }
+
+  /* A borrowed day is dimmed, never hidden: a month has edges and they matter. */
+  .cal-cell.is-outside {
+    opacity: 0.45;
+  }
+
+  .cal-cell.is-selected {
+    border-color: var(--c-foam);
+    background: rgb(134 224 214 / 0.12);
+  }
+
+  .cal-cell.has-overdue {
+    box-shadow: inset 3px 0 0 var(--warn);
+  }
+
+  .cal-num {
+    display: inline-grid;
+    place-items: center;
+    min-width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 50%;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.85rem;
+    color: var(--ink-dim);
+  }
+
+  .cal-cell.is-outside .cal-num {
+    color: var(--ink-faint);
+  }
+
+  /*
+   * Today survives greyscale: the numeral is knocked out of a filled disc, so
+   * it reads as a luminance reversal rather than a tint, and it is the only
+   * disc on the grid.
+   */
+  .cal-cell.is-today .cal-num {
+    background: var(--ink);
+    color: var(--today-ink);
+    font-weight: 700;
+  }
+
+  .cal-cell-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    margin-top: 0.15rem;
+  }
+
+  .cal-pip {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-width: 0;
+    font-size: 0.72rem;
+    color: var(--ink-dim);
+  }
+
+  .cal-pip-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .cal-pip-dot {
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--c-light);
+  }
+
+  .cal-pip-dot[data-priority='high'],
+  .cal-pip[data-priority='high'] .cal-pip-dot {
+    background: var(--c-amber);
+  }
+
+  .cal-pip-dot[data-priority='urgent'],
+  .cal-pip[data-priority='urgent'] .cal-pip-dot {
+    background: var(--c-clay);
+  }
+
+  /*
+   * A finished occurrence is struck through as well as dimmed. Dimming alone
+   * is a contrast change, and a contrast change is what a low-priority task
+   * already looks like.
+   */
+  .cal-pip[data-status='completed'],
+  .cal-pip[data-status='skipped'],
+  .agenda-entry[data-status='completed'],
+  .agenda-entry[data-status='skipped'] {
+    color: var(--ink-faint);
+    text-decoration: line-through;
+  }
+
+  /*
+   * Three states, three silhouettes: a filled disc still to do, an open ring
+   * done, a flat dash waved away.
+   *
+   * Below 520px the cell drops its task names and the dot is the only thing
+   * left of an entry, so a strike-through on hidden text says nothing. Fill
+   * alone would not be enough either — "solid teal vs faint teal" is a
+   * lightness difference, which is the same failure as colour-alone wearing a
+   * different hat, and it is exactly what a low-priority task already looks
+   * like. Shape is the only channel here that survives greyscale, a 6px
+   * rendering and a dimmed cell at once.
+   */
+  .cal-pip[data-status='completed'] .cal-pip-dot,
+  .agenda-entry[data-status='completed'] .cal-pip-dot {
+    background: transparent;
+    box-shadow: inset 0 0 0 1.5px var(--ink-dim);
+  }
+
+  .cal-pip[data-status='skipped'] .cal-pip-dot,
+  .agenda-entry[data-status='skipped'] .cal-pip-dot {
+    width: 10px;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--ink-dim);
+  }
+
+  .cal-more {
+    font-size: 0.7rem;
+    color: var(--ink-faint);
+  }
+
+  /* ---- agenda ---- */
+
+  .cal-agenda {
+    display: flex;
+    flex-direction: column;
+    max-height: min(60svh, 34rem);
+    overflow-y: auto;
+  }
+
+  .agenda-row {
+    border-top: 1px solid var(--glass-edge);
+    padding: 0.15rem 0;
+  }
+
+  .agenda-row:first-child {
+    border-top: none;
+  }
+
+  /* An empty day keeps its row and its heading. An empty week is information. */
+  .agenda-row.is-empty .agenda-heading {
+    color: var(--ink-faint);
+  }
+
+  .agenda-day {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.5rem;
+    width: 100%;
+    min-height: 2.2rem;
+    padding: 0.3rem 0.45rem;
+    border-radius: var(--radius-sm);
+    text-align: left;
+  }
+
+  .agenda-day:hover {
+    background: rgb(134 224 214 / 0.08);
+  }
+
+  .agenda-row.is-selected .agenda-day {
+    background: rgb(134 224 214 / 0.14);
+    box-shadow: inset 0 0 0 1px var(--c-foam);
+  }
+
+  .agenda-row.is-today .agenda-heading {
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 0.25em;
+  }
+
+  .agenda-row.has-overdue .agenda-load {
+    color: var(--warn-ink);
+  }
+
+  .agenda-heading {
+    font-size: 0.9rem;
+  }
+
+  .agenda-load {
+    font-size: 0.78rem;
+    color: var(--ink-faint);
+  }
+
+  .agenda-entries {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    padding: 0 0.45rem 0.35rem 1.1rem;
+  }
+
+  .agenda-entry {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.82rem;
+    color: var(--ink-dim);
+  }
+
+  .agenda-status {
+    color: var(--ink-faint);
+  }
+
+  /* ---- the selected day's list ---- */
+
+  .cal-day {
+    padding: 0.9rem;
+    border: 1px solid var(--glass-edge);
+  }
+
+  .cal-day-title {
+    font-family: var(--font-display);
+    font-size: 1rem;
+  }
+
+  .cal-day-load,
+  .cal-day-empty {
+    margin-top: 0.15rem;
+    font-size: 0.82rem;
+    color: var(--ink-faint);
+  }
+
+  .cal-day-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-top: 0.7rem;
+  }
+
+  .cal-entry {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .cal-entry-lead {
+    display: grid;
+    place-items: center;
+  }
+
+  /*
+   * A forecast occurrence and a finished one are not tickable, and the mark
+   * that replaces the checkbox says which it is — an icon plus a word in the
+   * chips, never the icon alone.
+   */
+  .cal-entry-mark {
+    display: grid;
+    place-items: center;
+    width: var(--tap);
+    height: var(--tap);
+    margin: -0.15rem 0 0 -0.35rem;
+    color: var(--ink-faint);
+  }
+
+  .cal-entry[data-status='completed'] .task-title,
+  .cal-entry[data-status='skipped'] .task-title {
+    color: var(--ink-faint);
+    text-decoration: line-through;
+  }
+
+  .chip-status {
+    color: var(--ink-faint);
+  }
+
+  /*
+   * Below this the grid's cells cannot hold a task name at a readable size, so
+   * the cell keeps its dots and its numeral and the day's list below carries
+   * the words. The agenda is the better layout at this width and is one tap
+   * away.
+   */
+  @container list (width < 520px) {
+    .cal-cell {
+      height: 3.6rem;
+    }
+
+    /*
+     * Seven columns and a 320px viewport leave 45px a cell only if the panel
+     * stops taking 8px off each side for a border it does not need at this
+     * width. A day is a tap target, and 42px is the kind of miss that puts you
+     * in the wrong week.
+     */
+    .cal-body {
+      padding: 0.15rem;
+    }
+
+    .cal-pip-title,
+    .cal-more {
+      display: none;
+    }
+
+    .cal-cell-body {
+      flex-direction: row;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /*
+     * The dot is now the entry, so it grows: a 1.5px ring inside a 6px disc
+     * leaves a 3px hole, which is not a shape anybody can read. At 9px the
+     * ring, the disc and the dash are three plainly different things.
+     */
+    .cal-pip-dot {
+      width: 9px;
+      height: 9px;
+    }
+
+    .cal-pip[data-status='completed'] .cal-pip-dot {
+      box-shadow: inset 0 0 0 2px var(--ink-dim);
+    }
+
+    .cal-pip[data-status='skipped'] .cal-pip-dot {
+      width: 11px;
+      height: 3px;
+    }
+  }
+
 }
 
 @layer utilities {

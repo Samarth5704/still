@@ -41,8 +41,16 @@ WebGL2. No polyfills.
 Three repositories informed this project and belong in the README's
 acknowledgements, all MIT:
 
-- **collidingScopes/liquid-logo** — used *offline* to generate the wordmark and
-  OG image. Its output is committed as static assets; none of its code ships.
+- **collidingScopes/liquid-logo** — read for how it turns a flat mark into
+  liquid. This was written expecting its output to be committed as static
+  assets for the wordmark and OG image; Phase 8 did not do that, and the
+  README says so. The wordmark is live text set in Fraunces, which stays
+  selectable and reflows, and the favicon is two hand-drawn SVG paths. The OG
+  image is a 1200x630 capture of *this project's own shader* from
+  `/shader.html`, which is a better preview of the product than a generated
+  wordmark would have been and needs no third-party output at all. The
+  influence is real and is credited as influence; no asset from it ships,
+  because none was ever made.
 - **dashersw/liquid-glass-js** — studied for its refraction approach. Its code is
   **not** imported: it samples the page through html2canvas, which is untenable
   for a list that changes constantly, and its `Button` class produces a
@@ -103,7 +111,8 @@ type Task = {
 }
 
 type Project = { id, name, colorToken, icon, archived: boolean, order: number }
-type Tag     = { id, name, colorToken }
+type Tag     = { id, name, colorToken, archived: boolean }
+             // archived added in Phase 4: see "Settled during Phase 4" below
 
 type Recurrence = {
   id: string
@@ -400,6 +409,50 @@ deleting when items reference them, so a completed task from last month still
 resolves the name it was filed under. Deleting anyway requires an explicit
 reassign-or-delete choice with counts.
 
+### Settled during Phase 4 — read before Phase 5
+
+**`Tag` gained `archived: boolean`.** The Phase 1 type block above listed
+`Tag = { id, name, colorToken }`, but this phase requires archiving for *both*
+catalogues and a tag has exactly the same problem a project does: a completed
+task carries it, so deleting the name either rewrites history or leaves a
+dangling reference. The field is additive — `parseTag` defaults it to `false`,
+so data written before it existed loads as live, which is what it was — and it
+needed no schema bump. The type block has been corrected to match.
+
+Tag deletion offers *untag* where project deletion offers *delete the tasks*.
+Same shape of choice, different stakes: a tag is one chip among several, not
+the file the task lives in, so destroying a task over a retired label would be
+a disproportionate answer to the question being asked.
+
+**Every way out of a dialog is a dismiss, not a cancel.** Task detail saves as
+you go, so the close button, Done, Escape and a backdrop click all do exactly
+the same thing and none of them discards anything. That leaves one hole a
+save-as-you-go dialog can still fall into — `change` fires when a field is
+*left*, and Escape closes the dialog out from under the caret — so a field
+typed into but not yet left records its commit and is flushed explicitly on the
+way out, rather than trusting the browser to fire blur-then-change in that
+order on close. Because nothing can be lost there is no "discard changes?"
+prompt; the footer says "Changes save automatically", since a user expecting
+Escape to cancel would otherwise learn the rule by losing something. Phase 5's
+recurrence editor is a bigger, more modal thing to build inside this dialog —
+if any part of it needs a genuine cancel, it must say so and hold its own
+draft, because the surrounding contract is that closing keeps your work.
+
+**Focus restoration needs a named fallback, not a stored trigger.** A dialog
+restores focus to whatever opened it, but the edit made inside can destroy that
+control: completing a task removes its row, changing a due date moves the row
+out of Today, deleting a project takes its line out of the manage list.
+`focus()` on a detached node does nothing and focus lands on `<body>`, which
+ends keyboard navigation until the user tabs in from the top of the page.
+`restoreFocus` in `app/dom.ts` takes the preferred node plus ordered fallbacks
+and verifies each one actually took focus — connected is not the same as
+focusable, and an inert node accepts the call and changes nothing. The chains:
+task detail falls back to the view heading, then quick add; the manage dialog
+to the header button, then the heading; the question dialog to a control inside
+the dialog underneath, because a fallback outside a modal that is still open is
+inert and will silently refuse. The task list uses the same helper when the
+completed row was the last one.
+
 ---
 
 ## Phase 5 — recurrence UI
@@ -419,6 +472,68 @@ Budget more time for this than for the shader.
 - Skipping an occurrence without completing it.
 - Show, on the task, how many occurrences remain when the rule has an end.
 
+### Settled during Phase 5 — read before Phase 6
+
+**The task *is* the series.** There is one `Task` per recurring rule, never one
+per occurrence, and its `due` is the occurrence it is currently sitting on.
+Everything else follows: ticking it records a `'completed'` exception and walks
+`due` forward, skipping records a `'skipped'` one and does the same, and
+exhausting the rule is the only thing that sets `done`. `lib/series.ts` holds
+those operations and `recurrence.ts` still holds the generator, so the "what
+dates does this rule produce" question and the "what happens when you tick it"
+question never answer each other.
+
+Phase 6 therefore cannot find an occurrence's task by looking for one: to put
+occurrences on a month grid it must pull them from `state.recurrences` for the
+visible window and attribute each to the task carrying that rule. The task's
+`due` names only the current occurrence, not the ones either side of it.
+
+**No new field on `Task`.** The Phase 1 type block stands unchanged, which is
+why the `SUBTASK_STRIPPED` classification needed no new entry. The scope of an
+edit is not data — it is state for the length of one visit to the detail
+dialog.
+
+**`setDone` routes repeating tasks away from itself.** There is one way to tick
+a task and it always does the right thing, rather than every caller — the list
+checkbox, the close-the-parent prompt, a keyboard shortcut — having to remember
+which kind of task it holds. Completing an occurrence also unticks the
+subtasks: a repeating task's checklist belongs to the occurrence, so next
+week's review starts empty.
+
+**Position, never remainder.** A skipped occurrence still consumes one of an
+`ends.after` count, so "7 left" would quietly stop being true the first time
+anybody skipped one. The task and the editor both read `3 of 10 scheduled`, and
+the editor's summary states the count with the date it lands on — "10 times
+(ending 14 January 2026)". Counting an `until` rule means generating it, so
+`totalOccurrences` refuses past a thousand and the UI drops the position rather
+than showing a number it had to strain for.
+
+**"This and all future" really does leave two rules.** The original is ended
+the day before the split and the new one starts on it, with an untouched
+`ends.after` carried across as *remaining* rather than restated — ten times
+that has already run three becomes seven, not ten again. The truncated original
+is kept only when it carries exceptions: with no task pointing at it, a husk
+with no history in it is storage weight nothing can ever render, while one with
+completions in it is the record of what was actually done, which is Phase 6's
+to draw.
+
+**The recurrence editor is the one dialog with a genuine Cancel**, and Phase 4
+said it would have to declare itself if it did. A rule is built from parts that
+are only meaningful together — halfway between "every Monday" and "the last
+Friday of every month" the draft is a monthly rule with a weekday set and no
+month day — so it holds its own draft, commits nothing until Save, and says
+"Cancel discards this repeat" in its footer where the button is. It resolves a
+promise rather than writing to the store, because what a new rule *means* for
+an existing series is the store's decision, not the dialog's.
+
+**The scope question is asked once per visit, on the first edit.** Not on open,
+which would interrupt someone who came to read; not per field, which would ask
+five times to change a title, a date and a priority. The answer is then shown
+in the repeat section with a way to change it, so a scope chosen in passing is
+never invisible. Editing the rule itself asks a two-way version of the same
+question — a rule that applies to one occurrence is not a rule, which is what
+Skip and a moved date are for.
+
 ---
 
 ## Phase 6 — calendar and agenda
@@ -432,6 +547,82 @@ Budget more time for this than for the shader.
   Home/End to the week's edges.
 - Clicking a day filters the list rather than opening a modal.
 - Today is marked in a way that survives greyscale.
+
+### Settled during Phase 6 — read before Phase 7
+
+**The calendar reads rules, not tasks.** `lib/calendar.ts` builds one map of
+day → entries for exactly the window on screen, and both the grid and the
+agenda are shapes over that one answer, so they cannot disagree about what a
+Tuesday holds. Plain tasks come from their `due`; a repeating task comes from
+its rule and never from its `due`, or the occurrence it is currently sitting on
+would be drawn twice and the ones either side of it not at all. Every call is
+still a bounded window over the bounded generator — the per-rule cap is the
+window's own length, because a rule cannot put two occurrences on one day
+unless one was moved there.
+
+**A rule left behind by a split keeps its title through the shape of the
+split.** `splitSeries` ends the original the day before its successor starts,
+so an orphaned rule is matched to the task by following that chain forward
+until a rule a task points at is reached. Two rules starting on the same day
+are ambiguous and link to nothing: a mis-titled completion is worse than a
+missing one. Only the *finished* occurrences of an orphan are drawn — its
+pending dates are unreachable, and a checkbox that cannot do anything is worse
+than a blank square.
+
+**Focus and selection are different things, and both had to exist.** Arrow
+keys move focus without committing; Enter or Space selects, which filters the
+day list and writes the day into the URL. Selecting on every arrow key would
+push a history entry per keystroke and re-announce the panel seven times
+crossing a week, so each focus move announces the day it landed on instead.
+Focus is only ever reset from outside when the *selection* changes — comparing
+it against the focused day instead is how every arrow key gets snapped straight
+back, which looks exactly like a grid with no keyboard support at all.
+
+**The selected day is in the URL, but with `replaceState`.** A day is a filter,
+not a destination: Back should leave the calendar rather than walk through
+every day someone looked at. That also means no `hashchange`, and therefore no
+focus move to the view heading — which is what keeps the arrow keys inside the
+grid where the user put them. `sameView` ignores the day so the nav link stays
+lit; `sameHash` is the strict question, and routing is the only thing that asks
+it.
+
+**Only the current occurrence gets a checkbox.** `setDone` acts on the task,
+and a repeating task's `due` is the one occurrence it is sitting on — so a
+checkbox on next Monday's cell would tick *this* Monday's. Everything else on
+the grid carries a mark and a word instead: `completed`, `skipped`, or
+`scheduled`.
+
+**Today is marked by luminance, not hue**: the numeral is knocked out of a
+filled disc, the only disc on the grid, and `aria-current="date"` says the same
+thing to anyone not looking.
+
+**Below 520px the dot is the whole entry, so the statuses are shapes.** The
+cells drop their task names at that width, which means a strike-through on
+hidden text says nothing and the dot has to carry the state on its own. Filled
+disc is outstanding, open ring is done, flat dash is skipped — three
+silhouettes, because a fill or lightness difference is the colour-alone failure
+wearing different clothes, and it is also exactly what a low-priority task
+already looks like. The dot grows to 9px there, since a 1.5px ring inside a 6px
+disc leaves a 3px hole that is not a shape anybody can read. The same three
+states are in the cell's `aria-label`, where `dayLoadLabel` counts *done* and
+*skipped* separately rather than summing them as "finished": that string is all
+a screen reader gets from a dot, and a day waved away is not a day completed.
+
+**One fetch per render.** The grid, the agenda and the day panel all want the
+same days, so they are three shapes over one `CalendarWindow` rather than three
+calls to `entriesBetween` — which walks every rule in the state, and would make
+the one-day panel pay the full per-rule cost of the whole month. Paging a month
+therefore costs one more pass over the rules, not one per cell; measured at
+**1.8 ms** for a 56-day window over 300 tasks and 40 rules (395 entries), with
+the one-day fallback the day panel uses when it is showing a day off the month
+on screen at **0.43 ms**. `src/app/calendar.cost.test.ts` counts the calls, so
+the shape of that cost cannot regress silently even where the timing would be
+too flaky to assert.
+
+**Empty days keep their rows.** The agenda lists every day of the month
+including the ones with nothing on them, and each says so in words. An empty
+week is information, and collapsing it is how a quiet fortnight comes to look
+like a missing one.
 
 ---
 
@@ -449,6 +640,121 @@ shader shows through and moves behind them.
 **The rule that governs everything here: text never sits directly on the
 shader.** Every text-bearing surface has a scrim with a guaranteed minimum
 opacity beneath it. The shader is background, and background it stays.
+
+---
+
+### Settled during Phase 7 — read before Phase 8
+
+**The surface reads the store, not the list.** `app/surface.ts` is handed a
+`PressureSummary` and the effects setting, and knows nothing else — not what a
+task is, not what "overdue" means. `lib/pressure.ts` had already turned the
+backlog into two numbers, so the header's word, the live summary and the
+shader are three readings of one definition rather than three definitions that
+happen to agree today. Nothing in that module runs per frame; the renderer's
+loop is still the only thing that does, and it still touches no DOM.
+
+**The first paint snaps; everything after it eases.** The two-second approach
+is the point of the whole channel — adding a task should read as the tide
+turning — but there is nothing to ease *from* on load, and easing anyway means
+a user with nine overdue tasks watches their backlog arrive as an animation
+that looks like a loading state for something already loaded.
+
+**The tinted shadow comes from the palette, not from the pixels.** Phase 7 asks
+for "a soft outer shadow tinted from the surface below", and the tempting
+reading is to sample the framebuffer — which puts a GPU readback in front of
+every paint and is exactly the approach liquid-glass-js was studied for and
+rejected over. `gl/tint.ts` derives it from the same ramp the shader is handed:
+`--glass-tint` is rewritten on `:root` whenever heat moves, so a late list casts
+a red-black shadow and a clear one a blue-black shadow, and a test sweeps the
+whole range asserting the shadow is never lighter than the trough it falls on.
+It is set in fallback mode too, because in fallback mode that ramp is still
+what is behind the chrome.
+
+**"Text never sits on the shader" cost more than it sounds.** Six surfaces were
+carrying text with nothing beneath them, and every one of them looked correct
+through Phase 6 because the thing behind the app was a fixed gradient that
+never moved. The list rows were the worst of them: 0.55 alpha, which is a tint,
+not a scrim, and a crest passing under a task title. They now use `--glass-bg`
+like everything else — the floor is one token so Phase 8's contrast script has
+one number to sample rather than a dozen hand-rolled alphas. The two headings
+and the group labels sit on plates sized to the words rather than full-width
+bars, so the surface still fills the rest of the row; the calendar's month
+name, stepper, "Today" and layout switch share one strip, because plating four
+controls separately is a worse-looking way to obey the same rule; and the
+read-only banner composites its warn wash *over* the scrim instead of using it
+as one. `style.test.ts` holds the list and rejects a wash in any block that
+never names the floor.
+
+**`--ink-faint` did not survive the move.** The dimmest ink in the palette was
+chosen against a still gradient and is the first thing to go on a plate over a
+moving surface, so the group labels stepped up to `--ink-dim`. They are still
+quieter than the rows.
+
+**Ripples are an event, not a call.** Completions dispatch `still:ripple` with
+the checkbox's own screen position and the surface listens on `window`. The
+list, the detail dialog's subtasks and the calendar all fire the same event
+without importing anything from `gl/`, and the surface never learns which one
+it came from.
+
+**`reduced` is not `off` and neither one is silent.** `resolveMode` is a pure
+table: no WebGL2 or `off` gives the CSS fallback, `reduced` gives a still
+shader, `full` gives a moving one. `uStill` damps flow, warp and ripples to
+nothing, so frequency, relief, seat level and palette still follow pressure and
+heat — collapsing `reduced` to the gradient is the tempting simplification and
+it quietly removes information from the users most likely to need it. `off`
+stops the loop rather than hiding it; a cancelled rAF is the difference between
+"effects off" and "effects invisible and still costing a GPU".
+
+**`effects` gained a fourth value, `auto`, and it is the default.** It is the
+same three-way shape as `theme` and it exists for the same reason: with three
+values an explicit `full` is indistinguishable from the default `full`, so
+following `prefers-reduced-motion` would overrule someone who asked for motion
+and ignoring it would overrule someone who asked for none. Only `auto` asks the
+OS; the other three outrank it in both directions, which is what makes the
+preference independent of the system setting rather than merely unaware of it.
+Phase 8's control has four options to draw, not three.
+
+The media query is **listened to**, not read at boot. A preference that only
+takes effect on the next reload is one the user has to discover is a reload
+away. The change handler re-resolves the mode and deliberately does not touch
+the pressure and heat targets — the backlog has not moved, and re-running
+`apply` would restart the two-second ease every time an OS setting was toggled.
+A motion change can never enter or leave the fallback, because only WebGL2 and
+an explicit `off` choose it, which is what lets the handler skip repainting the
+gradient.
+
+**Schema 1 → 2 migrates a stored `full` to `auto`.** Schema 1 defaulted to
+`full` and shipped no way to change it, so every stored `full` is a default
+nobody picked; reading it back as a choice would leave those users with an
+animated background that ignores their OS preference for good. The version bump
+is what stops the migration running once an effects control exists and a stored
+`full` becomes a real choice. `reduced` and `off` are carried across untouched —
+they could only ever have been set deliberately.
+
+**`--glass-tint` is written only when the colour changes.** A custom property on
+`:root` invalidates every rule that reads it, so each write is a document-wide
+style recalc. This was never per-frame — `apply` runs per store change and reads
+the *target* heat, while the ease happens inside the renderer — but a burst of
+edits still produced one invalidation each, measured at **60 writes in 44 ms
+across 30 quick-adds, every one of them the same colour**. The dedupe is string
+equality on the resolved 8-bit colour rather than an epsilon on heat: the string
+*is* the paint, so two heats that round to the same triple are the same pixel
+and anything that survives the comparison is a change someone could see. The
+shader's ease is untouched and stays smooth; CSS is simply no longer dragged
+along with it.
+
+**The scrim rule has a guard that catches code nobody has written yet.**
+`style.test.ts` names the six surfaces this phase fixed, which proves those six
+do not regress and proves nothing about the seventh. `app/scrim.test.ts` boots
+the real app under happy-dom, renders every view, walks every element that
+carries a text node, and requires each one to reach a scrim before it reaches
+the page — with the set of scrim-bearing classes *derived from the stylesheet*,
+so painting `var(--glass-bg)` in a new rule is all it takes to register one. A
+new panel added without a scrim fails on the day it is written and the failure
+names the element and quotes its text. It cannot resolve the cascade — happy-dom
+has no `@layer` — so it asks about containment rather than pixels; contrast
+across the palette range is still Phase 8's script, and this is the structural
+question underneath it.
 
 ---
 

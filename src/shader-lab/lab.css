@@ -31,6 +31,30 @@ body.lab {
   display: block;
 }
 
+/*
+ * Every element here that sets `display` and is hidden from script needs its
+ * own opt-out from the user-agent `[hidden] { display: none }` rule, because a
+ * rule in this file outranks it.
+ *
+ * `.still-fallback` had not had one since Phase 2, and the effect was that the
+ * fallback div — `hidden`, and painted with its default cool ramp — sat over
+ * the canvas for the life of the page. Both are `position: fixed; inset: 0`
+ * and the fallback comes second in the markup, so it won. The lab looked
+ * plausible the whole time, because what you saw was a calm blue wash and a
+ * calm blue wash is a thing this surface does; the sliders simply never
+ * appeared to do anything to the background. Phase 8 found it by capturing the
+ * OG image and getting the same PNG, byte for byte, at every setting.
+ *
+ * `src/style.test.ts` had held exactly this rule for the app's stylesheet since
+ * Phase 6, which is why the bug lived here and not there. It reads this file
+ * too now.
+ */
+.surface[hidden],
+.still-fallback[hidden],
+.panel[hidden] {
+  display: none;
+}
+
 .panel {
   position: fixed;
   top: 16px;

@@ -63,6 +63,49 @@ describe('cascade layers', () => {
     }
   })
 
+  /*
+   * The calendar arrived as one long block appended to the stylesheet, and the
+   * obvious place to append it — just before `@layer utilities` — is *outside*
+   * every layer, where it silently outranks all of them. It looked right on
+   * screen and would have started overriding unrelated rules the first time one
+   * of its class names was reused.
+   */
+  it('leaves no rule outside a layer at all', () => {
+    // Walk the file at brace depth zero. A top-level `@layer name {` prelude
+    // belongs to its block; anything else at depth zero is a rule nobody
+    // layered.
+    let stray = ''
+    let prelude = ''
+    let depth = 0
+    for (const c of css) {
+      if (c === '{') {
+        if (depth === 0) {
+          if (!/@layer\s+[\w-]+\s*$/.test(prelude)) stray += prelude
+          prelude = ''
+        }
+        depth += 1
+      } else if (c === '}') {
+        depth -= 1
+      } else if (depth === 0) {
+        prelude += c
+      }
+    }
+
+    const remains = (stray + prelude)
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/@layer[^;{]*;/g, '')
+      .replace(/@import[^;]*;/g, '')
+      .trim()
+    expect(remains, `found rules outside every @layer: ${remains.slice(0, 160)}`).toBe('')
+  })
+
+  it('styles the calendar in the components layer', () => {
+    const components = layerBody('components')
+    for (const selector of ['.calendar', '.cal-grid', '.cal-cell', '.cal-agenda', '.cal-day']) {
+      expect(components, `${selector} belongs in @layer components`).toContain(selector)
+    }
+  })
+
   it('styles the nav in the components layer, mobile rules included', () => {
     const components = layerBody('components')
     expect(components).toContain('.app-nav')
@@ -78,7 +121,27 @@ describe('hidden elements stay hidden', () => {
    * `hidden` property needs its own opt-out. These are the elements the app
    * hides that way.
    */
-  const hiddenByScript = ['.undo-bar', '.move']
+  const hiddenByScript = [
+    '.undo-bar',
+    '.move',
+    // Phase 4. The detail dialog hides whole regions for a subtask, which has
+    // no date, project, tags or subtasks of its own. Every one of these sets
+    // `display`, so every one needs its own opt-out.
+    '.field',
+    '.field-row',
+    '.subtasks',
+    '.parent-prompt',
+    // Phase 6. The calendar swaps one layout for the other and empties its day
+    // panel by toggling `hidden`. `.cal-grid` is deliberately absent: it is a
+    // `<table>` and sets no `display` of its own, so the user-agent rule still
+    // reaches it.
+    '.cal-agenda',
+    '.cal-day-list',
+    '.cal-entry-mark',
+    // The tick itself. The calendar hides it on an entry nothing can act on,
+    // and `.check` is `display: grid` everywhere.
+    '.check',
+  ]
 
   it.each(hiddenByScript)('%s has a [hidden] rule that beats its own display', (selector) => {
     const pattern = new RegExp(
@@ -95,5 +158,229 @@ describe('hidden elements stay hidden', () => {
       const sets = new RegExp(`\\${selector}\\s*\\{[^}]*display:`, 's')
       expect(css, `${selector} no longer sets display; the [hidden] guard may be stale`).toMatch(sets)
     }
+  })
+})
+
+/*
+ * Phase 7's one rule: text never sits directly on the shader.
+ *
+ * Before Phase 7 the thing behind the app was a fixed gradient, so a heading
+ * with no surface under it was merely a style choice. It is a moving,
+ * hand-written noise field now, and every one of the selectors below was found
+ * by walking the app looking for words with nothing beneath them. The failure
+ * mode is the worst kind: it looks fine on the screenshot you happen to take,
+ * because the crest that eats the text arrives four seconds later.
+ *
+ * `--scrim` is the floor those surfaces share, and sharing it is the point —
+ * Phase 8's contrast script has one number to sample rather than a dozen
+ * hand-rolled alphas.
+ */
+/** Bodies of every innermost rule whose selector list contains `selector`. */
+function ruleBodies(selector: string): string[] {
+  const bodies: string[] = []
+  // Innermost blocks only: a body containing no braces cannot be an @media or
+  // an @layer, so this walks past the nesting without having to parse it.
+  for (const [, prelude, body] of css.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
+    const list = (prelude ?? '').split(',').map((p) => p.trim())
+    if (list.some((p) => p === selector || p.endsWith(` ${selector}`))) bodies.push(body ?? '')
+  }
+  return bodies
+}
+
+/*
+ * Phase 7's one rule: text never sits directly on the shader.
+ *
+ * Before Phase 7 the thing behind the app was a fixed gradient, so a heading
+ * with no surface under it was merely a style choice. It is a moving,
+ * hand-written noise field now, and every one of the selectors below was found
+ * by walking the app looking for words with nothing beneath them. The failure
+ * mode is the worst kind: it looks fine on the screenshot you happen to take,
+ * because the crest that eats the text arrives four seconds later.
+ *
+ * `--scrim` is the floor those surfaces share, and sharing it is the point —
+ * Phase 8's contrast script has one number to sample rather than a dozen
+ * hand-rolled alphas.
+ */
+describe('text never sits directly on the shader', () => {
+  /** Everything that carries text and is not inside a `.glass` panel. */
+  const scrimmed = ['.task', '.empty', '.view-title', '.group-title', '.cal-head', '.banner']
+
+  it.each(scrimmed)('%s paints the shared scrim beneath its text', (selector) => {
+    const bodies = ruleBodies(selector)
+    expect(bodies.length, `no rule for ${selector}`).toBeGreaterThan(0)
+    expect(
+      bodies.some((b) => b.includes('var(--glass-bg)')),
+      `${selector} must sit on var(--glass-bg)`,
+    ).toBe(true)
+  })
+
+  it('defines the scrim floor once, and builds the glass from it', () => {
+    expect(css).toMatch(/--scrim:\s*0?\.\d+;/)
+    // If --glass-bg ever hard-codes its alpha, every surface above silently
+    // stops being governed by the floor and the contrast script measures a
+    // number nothing uses.
+    expect(css).toMatch(/--glass-bg:\s*rgb\([^)]*var\(--scrim\)\)/)
+  })
+
+  it('leaves no hand-rolled scrim standing in for the floor', () => {
+    // The task row shipped at 0.55 through Phase 6 and was invisible as a
+    // defect for exactly as long as the background held still. A tint
+    // composited *over* the scrim is fine — the read-only banner is one — so
+    // what this forbids is a translucent wash in a block that never names the
+    // floor at all.
+    for (const selector of scrimmed) {
+      for (const body of ruleBodies(selector)) {
+        if (!/background(-color)?:/.test(body)) continue
+        const washes = [...body.matchAll(/rgb\([^)]*\/\s*(0?\.\d+)\s*\)/g)]
+        if (washes.length === 0) continue
+        expect(body, `${selector} washes at ${washes[0]![1]} without the scrim under it`).toContain(
+          'var(--glass-bg)',
+        )
+      }
+    }
+  })
+})
+
+describe('the surface layer', () => {
+  it('is fixed behind the app and takes no pointer events', () => {
+    const layout = layerBody('layout')
+    expect(layout).toContain('.still-surface')
+    expect(layout).toMatch(/\.still-surface\s*\{[^}]*z-index:\s*-1/s)
+    expect(layout).toMatch(/\.still-surface\s*\{[^}]*pointer-events:\s*none/s)
+  })
+
+  it('contains the canvas so a resize can never reach the app', () => {
+    // The render loop writes canvas.width/height. Containment is what makes
+    // "the loop touches no DOM and reads no layout" structurally true rather
+    // than true by inspection.
+    expect(layerBody('layout')).toMatch(/\.still-surface\s*\{[^}]*contain:\s*layout paint/s)
+  })
+})
+
+describe('glass', () => {
+  it('tints its outer shadow from a property the surface rewrites', () => {
+    // Hard-coding black here is the version of this that looks identical on a
+    // cool list and wrong on a hot one.
+    expect(css).toMatch(/--glass-shadow:\s*[^;]*var\(--glass-tint\)/)
+    expect(css).toMatch(/--glass-shadow-sm:\s*[^;]*var\(--glass-tint\)/)
+  })
+
+  it('gives the light theme the same tinted shadow rather than its own colour', () => {
+    const shadows = [...css.matchAll(/--glass-shadow:\s*([^;]*);/g)].map((m) => m[1]!)
+    expect(shadows.length).toBeGreaterThan(1)
+    for (const shadow of shadows) expect(shadow).toContain('var(--glass-tint)')
+  })
+
+  it('draws the top-edge highlight on task rows as well as panels', () => {
+    expect(layerBody('components')).toMatch(/\.glass::before,\s*\.task::before/)
+  })
+})
+
+/*
+ * Phase 8. The theme became a real preference, so the light palette has to be
+ * reachable two ways: from the OS (`prefers-color-scheme`) and from an explicit
+ * choice (`[data-theme='light']`), with the choice outranking the OS in both
+ * directions. CSS cannot express "either of these" across a media boundary, so
+ * the block is written twice — and two copies of a palette is exactly the kind
+ * of duplication that drifts one token at a time, silently, in one theme only.
+ */
+describe('the light theme', () => {
+  /** The declarations of the OS-driven block and the explicit one. */
+  function lightBlocks(): [Map<string, string>, Map<string, string>] {
+    const read = (selector: string): Map<string, string> => {
+      const start = css.indexOf(selector)
+      expect(start, `no ${selector} block`).toBeGreaterThan(-1)
+      const open = css.indexOf('{', start)
+      let depth = 0
+      for (let i = open; i < css.length; i += 1) {
+        if (css[i] === '{') depth += 1
+        else if (css[i] === '}') {
+          depth -= 1
+          if (depth === 0) {
+            const body = css.slice(open + 1, i).replace(/\/\*[\s\S]*?\*\//g, '')
+            const found = new Map<string, string>()
+            for (const [, name, value] of body.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) {
+              // Collapse whitespace: the two copies are indented differently.
+              found.set(name!, value!.replace(/\s+/g, ' ').trim())
+            }
+            return found
+          }
+        }
+      }
+      throw new Error(`unterminated ${selector}`)
+    }
+    return [read(":root:not([data-theme='dark']) {"), read(":root[data-theme='light'] {")]
+  }
+
+  it('says exactly the same thing whether the OS asked or the user did', () => {
+    const [fromOS, fromChoice] = lightBlocks()
+    expect(fromOS.size).toBeGreaterThan(6)
+    expect([...fromChoice.keys()].sort()).toEqual([...fromOS.keys()].sort())
+    for (const [name, value] of fromOS) {
+      expect(fromChoice.get(name), `${name} differs between the two light blocks`).toBe(value)
+    }
+  })
+
+  it('changes nothing but tokens, so those two blocks are the whole theme', () => {
+    // A `prefers-color-scheme` rule anywhere else is a piece of the light theme
+    // that an explicit choice cannot reach: it would follow the OS forever.
+    const strip = (text: string): string => text.replace(/\/\*[\s\S]*?\*\//g, '')
+    const all = [...strip(css).matchAll(/prefers-color-scheme/g)].length
+    const inTokens = [...strip(layerBody('tokens')).matchAll(/prefers-color-scheme/g)].length
+    expect(all, 'the light theme has leaked outside @layer tokens').toBe(inTokens)
+    expect(inTokens).toBe(1)
+  })
+})
+
+/*
+ * The surface lab's stylesheet, held to the one rule it broke.
+ *
+ * `lab.css` styled `.still-fallback` with `display: block`, which outranks the
+ * user-agent `[hidden] { display: none }` rule — so the fallback div, hidden
+ * and painted with its default cool ramp, sat over the canvas from Phase 2
+ * until Phase 8. Nobody noticed for six phases because a calm blue wash is a
+ * thing this surface does; what actually found it was capturing the OG image
+ * and getting the same PNG, byte for byte, at four different settings.
+ *
+ * The app's stylesheet has had this check since Phase 6. The lab's did not,
+ * which is precisely why the bug lived there and not here.
+ */
+describe('the surface lab stylesheet', () => {
+  // Comments are stripped before parsing: a comment carrying a comma lands in
+  // the next rule's selector list and quietly hides it from this check.
+  const lab = readFileSync(
+    fileURLToPath(new URL('./shader-lab/lab.css', import.meta.url)),
+    'utf8',
+  ).replace(/\/\*[\s\S]*?\*\//g, '')
+
+  /** Everything the lab toggles with the `hidden` property. */
+  const hiddenByScript = ['.surface', '.still-fallback', '.panel']
+
+  /** Innermost rule blocks, as [selector list, body] pairs. */
+  const rules = (): [string[], string][] =>
+    [...lab.matchAll(/([^{}]*)\{([^{}]*)\}/g)].map(([, prelude, body]) => [
+      (prelude ?? '').split(',').map((p) => p.trim()),
+      body ?? '',
+    ])
+
+  it.each(hiddenByScript)('%s has a [hidden] rule that beats its own display', (selector) => {
+    const setsDisplay = rules().some(
+      ([names, body]) => names.includes(selector) && body.includes('display:'),
+    )
+    expect(setsDisplay, `${selector} no longer sets display; this guard may be stale`).toBe(true)
+
+    // The opt-out may be its own rule or one of several selectors sharing a
+    // block, so look at the block that contains it rather than assume a shape.
+    const optsOut = rules().some(
+      ([names, body]) =>
+        names.includes(`${selector}[hidden]`) && /display:\s*none/.test(body),
+    )
+    expect(optsOut, `${selector} sets display but has no [hidden] { display: none }`).toBe(true)
+  })
+
+  it('keeps the canvas and the fallback in the same stacking position', () => {
+    // They are alternatives, never both: whichever is showing must occupy the
+    // same box, and the one that is not must be gone rather than merely behind.
+    expect(lab).toMatch(/\.surface,\s*\.still-fallback\s*\{[^}]*position:\s*fixed/s)
   })
 })

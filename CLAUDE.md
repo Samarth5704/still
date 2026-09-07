@@ -22,7 +22,90 @@ The full spec is in docs/still-prompt.md. Read it before starting any phase.
   record. It never mutates the rule.
 - Subtasks are one level deep, not a tree. A task with a parentId cannot have
   children. Enforced in the store.
+- SUBTASK_STRIPPED in lib/tasks.ts is the single definition of what a subtask
+  cannot carry. Subtasks are checklist items, not indented tasks: they have a
+  title and a tick and nothing else, and that is the whole reason this stays
+  one level deep rather than becoming a tree. The moment a subtask can hold its
+  own date, project or rule, it is a task, and users will reasonably expect to
+  nest one under it.
+  ANY NEW FIELD ON Task MUST BE CLASSIFIED THERE — stripped or inherited — in
+  the same commit that adds it. A field that is neither is silently inherited,
+  which is the wrong default and fails without an error. recurrenceId is
+  stripped, and anything alongside it must be too, because an occurrence of a
+  checklist item is meaningless. Phase 5 added no Task field: the scope of an
+  edit is per-visit state in app/detail.ts and never reaches the data.
+  lib/tasks.ts enforces this on creation; app/detail.ts hides the matching
+  regions for a subtask. Both sides read from the one constant, so they cannot
+  drift.
 - Pressure saturates (1 - exp(-load/k)), never scales linearly.
+
+### Recurrence in the app (lib/series.ts)
+- The TASK IS THE SERIES: one Task per rule, and its `due` is the occurrence it
+  currently sits on. Ticking records a 'completed' exception and walks `due`
+  forward; exhausting the rule is the only thing that sets `done`.
+- store.setDone routes a repeating task to completeOccurrence. There is one way
+  to tick a task and it always does the right thing — do not add a second.
+  Advancing also unticks the subtasks: the checklist belongs to the occurrence.
+- A skip consumes one of an ends.after count, so the UI shows a POSITION
+  ("3 of 10 scheduled") and never a remainder ("7 left"), which a skip would
+  silently falsify. totalOccurrences refuses to count past 1000 rather than
+  generate a series to answer a cosmetic question.
+- "This and all future" splits the rule: the original ends the day before, the
+  new one starts on the day. An ends.after the user did not touch carries
+  across as REMAINING, not restated. The truncated original is kept only when
+  it carries exceptions — a husk no task points at can never be rendered.
+- Every "what comes next" search is still a bounded window over the bounded
+  generator. lib/series.ts never calls occurrencesBetween without one.
+- app/recurrence.ts is the ONE dialog with a genuine Cancel, because a
+  half-built rule must never reach the store. It holds a draft, resolves a
+  promise, and says so in its footer. Everything else still saves as you go.
+- The scope question is asked once per visit to the detail dialog, on the first
+  edit, and the answer is then shown with a way to change it.
+
+### Calendar and agenda (lib/calendar.ts, app/calendar.ts)
+- The calendar reads RULES, not tasks. entriesBetween builds one day -> entries
+  map for exactly the window on screen and both the grid and the agenda are
+  shapes over it. A repeating task is drawn from its rule and NEVER from its
+  `due`, or the current occurrence appears twice and its neighbours not at all.
+  The per-rule cap is the window's own length; MAX_WINDOW_DAYS throws rather
+  than walking every rule for a year.
+- A rule no task points at is a split's leftover. It is attributed by following
+  the shape the split made — it ends the day before its successor starts — and
+  only its FINISHED occurrences are drawn. Two rules starting on the same day
+  link to nothing: a mis-titled completion is worse than a missing one.
+- FOCUS AND SELECTION ARE DIFFERENT. Arrows move focus and announce the day;
+  Enter or Space selects. Focus is reset from outside only when the SELECTION
+  changes — never by comparing it against the focused day, which snaps every
+  arrow key straight back and looks like a grid with no keyboard support.
+  The month on show always contains the focused day, so exactly one cell is in
+  the tab order.
+- Both layouts mark their focused day, so any focus restore MUST be scoped to
+  the layout on show. `.focus()` on a hidden node silently does nothing.
+- The selected day is in the URL via replaceState: a day is a filter, not a
+  destination, and no hashchange means no focus jump to the view heading.
+  sameView ignores it (the nav link stays lit); sameHash is the strict question.
+- Only the occurrence the task is sitting on gets a checkbox, because setDone
+  acts on the task. Everything else carries a mark AND a word.
+- ONE entriesBetween call per render. The grid, the agenda and the day panel
+  are three shapes over one CalendarWindow (calendarWindow / monthGridIn /
+  agendaIn / dayIn); the fetch-and-shape wrappers monthGrid, agendaDays and
+  dayDetail exist for the pure tests and for the off-window fallback. Three
+  separate fetches triple the per-rule walk and look identical on screen;
+  fetching inside the cell loop multiplies it by 42. src/app/calendar.cost.test.ts
+  counts occurrencesBetween calls and holds this.
+- Today is marked by luminance (a filled disc) plus aria-current, never by hue.
+  Below 520px the cells drop their task names and the dot is the ENTIRE entry,
+  so the three statuses are three SHAPES: filled disc outstanding, open ring
+  done, flat dash skipped. Fill or lightness alone is the colour-alone failure
+  in different clothing — it is also what a low-priority task already looks
+  like. The dot grows to 9px there so a ring is readable as a ring.
+- The cell's aria-label is the only thing a screen reader gets from a dot, so
+  dayLoadLabel counts done and skipped SEPARATELY — never as one "finished".
+- Empty days keep their rows in the agenda. An empty week is information.
+- Every rule in style.css must sit inside a @layer. Appending a block before
+  @layer utilities puts it OUTSIDE every layer, where it silently outranks all
+  of them; style.test.ts guards this, along with a [hidden] opt-out for every
+  selector that sets `display` and is hidden from script.
 
 ### Quick-add parsing (lib/parse.ts)
 - Token KINDS claim characters in a fixed order (KIND_ORDER): recurrence, then
@@ -53,3 +136,114 @@ The full spec is in docs/still-prompt.md. Read it before starting any phase.
   CSS fallback encodes both too.
 - WebGL context loss must be handled: preventDefault on lost, rebuild on
   restored.
+
+### The surface, wired (app/surface.ts, gl/tint.ts)
+- app/surface.ts takes a PressureSummary and the effects setting and knows
+  nothing else. lib/pressure.ts is the only definition of "busy"; the header's
+  word, the live summary and the shader are three readings of it. Nothing in
+  the module runs per frame.
+- resolveMode is the whole preference table and it is pure: no WebGL2 or 'off'
+  -> fallback, 'reduced' -> a STILL shader, 'full' -> a moving one. 'reduced'
+  must never be routed to the fallback. 'off' STOPS the loop; hiding it is not
+  the same thing.
+- Settings.effects has FOUR values and 'auto' is the default. Only 'auto' reads
+  prefers-reduced-motion; an explicit 'full', 'reduced' or 'off' outranks the OS
+  IN BOTH DIRECTIONS. That is the only thing that makes the preference
+  independent of the system setting rather than unaware of it — with three
+  values an explicit 'full' cannot be told from a default 'full'. Same shape as
+  theme, same reason. Phase 8's control draws four options.
+- The media query is LISTENED to, not read at boot. onMotionChange re-resolves
+  the mode only; it must never call apply(), which would restart the two-second
+  ease on an OS toggle. A motion change can never enter or leave 'fallback'.
+- SCHEMA_VERSION 2 migrates a stored 'full' to 'auto' and the version gate is
+  load-bearing: schema 1 had no effects UI, so every 'full' in it is a default
+  nobody picked, and once a control exists a stored 'full' is a real choice the
+  migration must stop touching.
+- --glass-tint is written only when the resolved colour string changes. A custom
+  property on :root invalidates every rule that reads it. apply() runs per store
+  change, never per frame, but a burst of edits measured 60 identical writes in
+  44ms before the guard.
+- Completions dispatch `still:ripple` with the checkbox's own screen position
+  and the surface listens on window. No view module imports anything from gl/.
+- The glass shadow is tinted from the PALETTE, never from the framebuffer.
+  gl/tint.ts derives it from the ramp heat has chosen and app/surface.ts writes
+  `--glass-tint` on :root; a readback per paint is what liquid-glass-js was
+  rejected for. The tint is set in fallback mode too.
+- `--scrim` is the single floor and `--glass-bg` is built from it. A surface
+  that carries text either is `.glass` or paints `var(--glass-bg)`. A hand-rolled
+  alpha is how the task row spent three phases at 0.55, which was invisible only
+  because nothing behind it moved.
+- TWO guards, and the second is the one that matters. style.test.ts names the
+  six surfaces Phase 7 fixed. app/scrim.test.ts boots the real app, walks every
+  element carrying a text node in every view and dialog, and requires a scrim
+  above it — with the scrim class set DERIVED from style.css, so a new rule that
+  paints var(--glass-bg) registers itself. New bare text fails on the day it is
+  written. Neither test can resolve the cascade (no @layer in happy-dom); actual
+  contrast across the palette range is Phase 8's script.
+
+### Performance, contrast and CI (Phase 8)
+- CONTRAST IS A RANGE, NOT A NUMBER. scripts/contrast.ts sweeps 21x21 points of
+  pressure x heat, takes the brightest AND darkest pixel the shader can produce
+  at each, composites the scrim (and the three washes over it) and fails the
+  build under 4.5:1. The two worst cases are OPPOSITE CORNERS: dark theme fails
+  on a busy, late crest; light theme fails on a calm, clear trough. Checking one
+  corner passes a stylesheet that is unreadable on an empty list.
+- gl/contrast.ts BOUNDS the shader rather than sampling it: the noise only
+  supplies a height in a known range and a unit normal, so both are swept
+  directly and the noise drops out. Every constant in it is copied from
+  surface.frag.glsl and contrast.test.ts reads them back OUT of the GLSL. Change
+  the shader's arithmetic and that test is what tells you the model went stale.
+- The script's UNCHECKED map is load-bearing: any token in the palette block
+  that is neither an ink it checks nor an exemption with a reason FAILS the run.
+  A new colour cannot arrive without a decision about its contrast.
+- --ink-faint (both themes) and the light theme's --warn were changed because
+  the sweep said 3.70, 2.86 and 3.45. Do not "restore" them by eye.
+- THE LIGHT THEME IS TWO BLOCKS SAYING THE SAME THING — the media query is what
+  `system` means, `[data-theme='light']` is what a choice means, and a choice
+  outranks the OS in both directions. Everything the theme changes is a TOKEN
+  (--field-bg, --weekend-bg, --today-ink, --ground, --warn-wash included), so
+  those two blocks are the whole theme; style.test.ts asserts they are identical
+  and that no prefers-color-scheme rule exists anywhere else.
+- app/settings.ts draws effects (4), theme (3) and week start (2). It knows
+  nothing about the shader: main.ts hands it `effectsStatus()`, which asks the
+  surface what it actually did. A control that shows the request rather than the
+  outcome is how someone concludes the app ignored them.
+- THE SHADER DOES NOT MEET ITS BUDGET AT NATIVE RESOLUTION ON AN INTEGRATED GPU:
+  9.6ms per megapixel measured, 28ms at 1440x900 DPR 1.5 against a 4ms budget.
+  So gl/renderer.ts measures its own GPU time and gives back RESOLUTION until it
+  fits (SCALE_STEPS, governScale). Making the shader cheaper instead would
+  change what the surface is on every machine, including the ones that were
+  fine. governScale is pure and tested; its two thresholds are asymmetric
+  because one step up is 1.56x the pixels, and it NEVER climbs on wall clock
+  alone — a 16.7ms frame is what vsync looks like whether the GPU used 1ms or 16.
+- src/perf.test.ts holds the two structural claims: no layout-reading API in
+  frame/draw/throttled/governResolution, and no innerHTML in any view module.
+  The measured numbers live in docs/performance.md with the machine they came
+  from; `still.store` / `still.render` / `still.surface` exist on globalThis in
+  DEV builds only and are how they were taken.
+- The deploy publishes an ALLOWLIST (scripts/deploy-manifest.ts), not dist/. An
+  unnamed top-level entry fails the build. shader.html is on it deliberately.
+- THE SURFACE LAB HAD A SIX-PHASE-OLD BUG that Phase 8 found by capturing the
+  OG image: lab.css styled `.still-fallback` `display: block`, which outranks
+  the user-agent `[hidden]` rule, so the fallback div sat over the canvas and
+  the sliders never moved the background. It looked plausible because a calm
+  blue wash is a thing this surface does. lab.css now has the same `[hidden]`
+  opt-out block style.css has, and style.test.ts now reads lab.css too — the
+  app's stylesheet had this check since Phase 6, which is exactly why the bug
+  lived in the lab and not in the app.
+- /shader.html?capture&pressure=&heat=&still=&time= is a real feature, not a
+  flag for one script. It seeds the REAL sliders (so it cannot drift from what
+  the panel does), pins the clock via Surface.seek, hides the panel, creates the
+  context with preserveDrawingBuffer (a screenshot re-composites AFTER the frame
+  is presented) and draws one frame synchronously via Surface.renderNow (the
+  loop's first frame is an rAF away, and a screenshot before it captures the
+  page background with no error). The loop is left RUNNING: stopping it races
+  the ResizeObserver and can leave the canvas at 300x150. docs/og.md.
+- The OG image is a frame of OUR OWN shader, captured from the lab, and the
+  attribution says so: nothing from liquid-logo ships, because no asset from it
+  was ever made. docs/still-prompt.md's attribution section was corrected to
+  describe what happened rather than what was planned.
+- docs/accessibility.md is the audit record and the one place the 41.2px
+  calendar day cell at 320px is EXEMPTED, with the agenda named as the
+  equivalent alternative. The exemption expires if the month grid ever becomes
+  the only route to something.

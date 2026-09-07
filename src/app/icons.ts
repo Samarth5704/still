@@ -24,9 +24,19 @@ type IconName =
   | 'undo'
   | 'chevron-up'
   | 'chevron-down'
+  | 'chevron-left'
+  | 'chevron-right'
+  | 'skip'
   | 'repeat'
   | 'clock'
   | 'alert'
+  | 'close'
+  | 'trash'
+  | 'archive'
+  | 'unarchive'
+  | 'settings'
+  | 'sliders'
+  | 'note'
 
 const PATHS: Record<IconName, string[]> = {
   check: ['M4 12.5 9 17.5 20 6.5'],
@@ -40,9 +50,19 @@ const PATHS: Record<IconName, string[]> = {
   undo: ['M4 9h11a5 5 0 0 1 0 10h-4', 'M8 5 4 9l4 4'],
   'chevron-up': ['M6 14.5 12 8.5l6 6'],
   'chevron-down': ['M6 9.5 12 15.5l6-6'],
+  'chevron-left': ['M14.5 6 8.5 12l6 6'],
+  'chevron-right': ['M9.5 6l6 6-6 6'],
+  skip: ['M7 6.5 14 12l-7 5.5Z', 'M17 6v12'],
   repeat: ['M4 10a6 6 0 0 1 6-6h10', 'M17 1l3 3-3 3', 'M20 14a6 6 0 0 1-6 6H4', 'M7 23l-3-3 3-3'],
   clock: ['M12 4.5a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15Z', 'M12 8v4.5l3 2'],
   alert: ['M12 4 2.5 20.5h19L12 4Z', 'M12 10v4.5', 'M12 17.5h.01'],
+  close: ['M6 6l12 12M18 6 6 18'],
+  trash: ['M4 7h16', 'M9 7V4.5h6V7', 'M6 7l1 13h10l1-13', 'M10 11v6M14 11v6'],
+  archive: ['M3 4.5h18v4H3z', 'M5 8.5v11h14v-11', 'M10 12.5h4'],
+  unarchive: ['M3 4.5h18v4H3z', 'M5 8.5v11h14v-11', 'M12 17v-5', 'M9.5 14.5 12 12l2.5 2.5'],
+  settings: ['M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z', 'M12 2.5v2.4M12 19.1v2.4M4.2 7l2.1 1.2M17.7 15.8l2.1 1.2M4.2 17l2.1-1.2M17.7 8.2l2.1-1.2'],
+  sliders: ['M4 7h9M17 7h3', 'M4 17h3M11 17h9', 'M15 4.5v5M9 14.5v5'],
+  note: ['M5 3.5h14v17H5z', 'M8.5 8h7M8.5 12h7M8.5 16h4'],
 }
 
 export function icon(name: IconName, className = 'icon'): SVGElement {

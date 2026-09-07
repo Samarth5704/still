@@ -17,15 +17,40 @@ export class Header {
   private readonly label: HTMLElement
   private readonly detail: HTMLElement
 
-  constructor() {
+  constructor(onManage: () => void, onSettings: () => void) {
     this.label = el('span', { class: 'pressure-label' })
     this.detail = el('span', { class: 'pressure-detail' })
+
+    // The one way into the catalogues, and it lives here rather than in the
+    // sidebar because the sidebar becomes a four-target bottom bar on mobile:
+    // a control tucked into the projects heading would simply not exist below
+    // 720px.
+    const manage = el(
+      'button',
+      { class: 'icon-button header-manage', type: 'button', 'aria-label': 'Manage projects and tags' },
+      [icon('settings')],
+    )
+    manage.addEventListener('click', onManage)
+
+    // Preferences sit beside it for the same reason. The effects control in
+    // particular has to be reachable on the device most likely to want it
+    // turned down.
+    const settings = el(
+      'button',
+      { class: 'icon-button header-settings', type: 'button', 'aria-label': 'Preferences' },
+      [icon('sliders')],
+    )
+    settings.addEventListener('click', onSettings)
 
     this.root = el('header', { class: 'app-header glass' }, [
       // Named for what the link does, not just what it says: "still" alone is
       // an odd thing to hear announced as a destination.
       el('a', { class: 'brand', href: '#/today', 'aria-label': 'Still — go to Today' }, [wordmark()]),
-      el('div', { class: 'pressure' }, [this.label, this.detail]),
+      el('div', { class: 'header-end' }, [
+        el('div', { class: 'pressure' }, [this.label, this.detail]),
+        manage,
+        settings,
+      ]),
     ])
   }
 
@@ -64,7 +89,7 @@ const BUILT_IN: NavItem[] = [
   { view: { kind: 'today' }, title: 'Today', icon: 'sun', count: (c) => c.today, alert: (c) => c.overdue > 0 },
   { view: { kind: 'upcoming' }, title: 'Upcoming', icon: 'horizon', count: (c) => c.upcoming },
   { view: { kind: 'all' }, title: 'All', icon: 'layers', count: (c) => c.all },
-  { view: { kind: 'calendar' }, title: 'Calendar', icon: 'calendar', count: () => 0 },
+  { view: { kind: 'calendar', day: null }, title: 'Calendar', icon: 'calendar', count: () => 0 },
 ]
 
 export class Nav {
@@ -72,23 +97,32 @@ export class Nav {
   private readonly primary: HTMLElement
   private readonly projects: HTMLElement
   private readonly projectHeading: HTMLElement
+  private readonly tags: HTMLElement
+  private readonly tagHeading: HTMLElement
   private readonly links = new Map<string, { a: HTMLAnchorElement; count: HTMLElement }>()
 
   constructor() {
     this.primary = el('ul', { class: 'nav-list' })
     this.projects = el('ul', { class: 'nav-list nav-projects' })
+    this.tags = el('ul', { class: 'nav-list nav-tags' })
+
     this.projectHeading = el('h2', { class: 'nav-heading' }, ['Projects'])
+    this.tagHeading = el('h2', { class: 'nav-heading' }, ['Tags'])
 
     this.root = el('nav', { class: 'app-nav glass', 'aria-label': 'Views' }, [
       this.primary,
       this.projectHeading,
       this.projects,
+      this.tagHeading,
+      this.tags,
     ])
   }
 
   render(state: State, counts: ViewCounts, current: View): void {
     this.renderInto(this.primary, BUILT_IN, counts, current)
 
+    // Archived entries drop out of the sidebar and stay resolvable everywhere
+    // else. That is the whole bargain archiving offers.
     const projectItems: NavItem[] = state.projects
       .filter((p) => !p.archived)
       .sort((a, b) => a.order - b.order)
@@ -101,6 +135,19 @@ export class Nav {
 
     this.projectHeading.hidden = projectItems.length === 0
     this.renderInto(this.projects, projectItems, counts, current, state)
+
+    const tagItems: NavItem[] = state.tags
+      .filter((t) => !t.archived)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((t) => ({
+        view: { kind: 'tag', id: t.id } as View,
+        title: `@${t.name}`,
+        icon: 'tag' as const,
+        count: (c: ViewCounts) => c.byTag.get(t.id) ?? 0,
+      }))
+
+    this.tagHeading.hidden = tagItems.length === 0
+    this.renderInto(this.tags, tagItems, counts, current, state)
   }
 
   private renderInto(
@@ -127,10 +174,13 @@ export class Nav {
       }
 
       const itemView = item.view
-      const colour =
-        state && itemView.kind === 'project'
+      const colour = !state
+        ? undefined
+        : itemView.kind === 'project'
           ? state.projects.find((p) => p.id === itemView.id)?.colorToken
-          : undefined
+          : itemView.kind === 'tag'
+            ? state.tags.find((t) => t.id === itemView.id)?.colorToken
+            : undefined
       if (colour) entry.a.style.setProperty('--nav-dot', `var(--c-${colour})`)
 
       setText(entry.a.querySelector('.nav-title')!, item.title)

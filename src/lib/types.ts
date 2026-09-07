@@ -36,6 +36,12 @@ export type Tag = {
   id: string
   name: string
   colorToken: string
+  /**
+   * Archived, like a project: retired from the sidebar and the pickers while
+   * every task that carries it still resolves the name it was filed under.
+   * Deleting is the other, louder option, and it asks what to do with them.
+   */
+  archived: boolean
 }
 
 /** 0 = Sunday … 6 = Saturday. */
@@ -91,10 +97,24 @@ export type Occurrence = {
   completedAt?: ISOInstant
 }
 
+/**
+ * The effects preference.
+ *
+ * Four values, not three, and the fourth is the default. `auto` follows
+ * `prefers-reduced-motion`; the other three are choices, and a choice outranks
+ * the OS. That split is the only thing that makes the preference "independent
+ * of the OS setting" rather than merely unaware of it — with three values an
+ * explicit `full` is indistinguishable from a default `full`, so honouring the
+ * OS would silently overrule someone who had asked for motion, and ignoring it
+ * would overrule someone who had asked for none. It is the same three-way shape
+ * as `theme`, for the same reason.
+ */
+export type EffectsSetting = 'auto' | 'full' | 'reduced' | 'off'
+
 export type Settings = {
   schemaVersion: number
   theme: 'dark' | 'light' | 'system'
-  effects: 'full' | 'reduced' | 'off'
+  effects: EffectsSetting
   weekStartsOn: WeekStart
   defaultProjectId: string | null
 }
