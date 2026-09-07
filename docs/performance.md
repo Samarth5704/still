@@ -1,7 +1,7 @@
 # Performance — measured
 
-Every number here was taken in a browser on one machine, on 6 September 2026.
-None of them is a promise about yours. What is a promise is the last section:
+Every number here was taken in a browser on one machine, on 6 and 7 September
+2026. None of them is a promise about yours. What is a promise is the last section:
 the shader now measures itself and gives back pixels until it fits, so the
 budget holds on hardware that could not otherwise meet it.
 
@@ -70,6 +70,47 @@ again, and oscillate forever, which is far more visible than sitting a step low.
 Where `EXT_disjoint_timer_query_webgl2` does not exist (Safari), there is no cost
 signal at all, only the symptom — so the governor steps down on sustained frame
 gaps over 20ms and never steps back up on wall clock alone.
+
+### A second reading: the same machine, a different answer
+
+Checked again a day later, on the same laptop but in a much smaller window and
+with a second GPU client on the same integrated adapter, the governor had gone
+further down:
+
+| | Settled at 0.65 (above) | Settled at 0.4 |
+|---|---|---|
+| CSS canvas | 1425 × 900 | 731 × 698 |
+| Drawing buffer | 1158 × 731 | 366 × 349 |
+| Megapixels | 0.85 | **0.13** |
+| GPU ms / frame | 3.78 | **2.90** |
+
+This is the governor working — it is inside budget both times — but the second
+row says something the first one hides. **0.13 megapixels should cost about
+1.2ms at this shader's measured 9.6 ms/Mpx, and it measured 2.9.** Roughly
+2.5ms of that frame is not pixels at all: it is per-frame overhead, and shrinking
+the drawing buffer cannot touch it.
+
+That is why it kept stepping. Below about 0.3 megapixels the cost stops falling
+with the pixel count, but it stays above the 2.2ms rise threshold
+(`BUDGET_MS * 0.55`), so the governor sees "still not cheap enough" at every
+step and walks to the floor — trading sharpness for an improvement it is not
+getting.
+
+**The limitation is worth stating plainly: `governScale` assumes GPU time is
+dominated by fragment work.** That assumption holds on the case it was built
+for — a full-screen surface on a weak GPU — and fails quietly on a small canvas
+in a contended context, where the honest answer is "this is as cheap as it gets,
+stop". The fix, if it becomes visible in practice, is to stop stepping down when
+a step does not buy a cost reduction roughly proportional to the pixels it gave
+up, rather than to compare against the budget alone. It has not been made yet,
+because a slightly soft background in a small window is a much smaller problem
+than a stuttering one, and nothing in the app has looked wrong.
+
+A note on reading these numbers: the `fps` figure in that second measurement was
+19.8 with `idle` false, which is the *host* throttling animation frames for a
+window that was not fronted — not the renderer's own idle throttle and not the
+GPU. `gpuMs` is the number to trust; it is the GPU's own measurement of the draw
+and does not care how often the frame is asked for.
 
 ## The app, with 200 tasks
 
